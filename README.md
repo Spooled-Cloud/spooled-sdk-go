@@ -153,6 +153,12 @@ func main() {
 }
 ```
 
+## Real-world examples (beginner friendly)
+
+If you want 5 copy/paste “real life” setups (Stripe → jobs, GitHub Actions → jobs, cron schedules, CSV import, website signup), see:
+
+- `https://github.com/spooled-cloud/spooled-backend/blob/main/docs/guides/real-world-examples.md`
+
 ## Documentation
 
 | Guide | Description |
