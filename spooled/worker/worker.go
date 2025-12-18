@@ -33,9 +33,9 @@ type Worker struct {
 	activeJobs sync.Map // map[string]*activeJob
 	jobCount   atomic.Int32
 
-	pollTicker       *time.Ticker
-	heartbeatTicker  *time.Ticker
-	eventHandlers    []EventHandler
+	pollTicker      *time.Ticker
+	heartbeatTicker *time.Ticker
+	eventHandlers   []EventHandler
 
 	mu       sync.RWMutex
 	ctx      context.Context

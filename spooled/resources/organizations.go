@@ -249,5 +249,3 @@ func (r *OrganizationsResource) RegenerateWebhookToken(ctx context.Context, id s
 func (r *OrganizationsResource) ClearWebhookToken(ctx context.Context, id string) error {
 	return r.base.Delete(ctx, fmt.Sprintf("/api/v1/organizations/%s/webhook-token", id))
 }
-
-

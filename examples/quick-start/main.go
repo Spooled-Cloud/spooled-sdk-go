@@ -99,5 +99,3 @@ func main() {
 
 	fmt.Println("\n✓ Quick start example complete!")
 }
-
-

@@ -4,14 +4,14 @@ import "time"
 
 // APIKey represents an API key.
 type APIKey struct {
-	ID             string    `json:"id"`
-	OrganizationID *string   `json:"organization_id,omitempty"`
-	Name           string    `json:"name"`
-	KeyPrefix      *string   `json:"key_prefix,omitempty"`
-	Queues         []string  `json:"queues,omitempty"`
-	RateLimit      *int      `json:"rate_limit,omitempty"`
-	IsActive       bool      `json:"is_active"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID             string     `json:"id"`
+	OrganizationID *string    `json:"organization_id,omitempty"`
+	Name           string     `json:"name"`
+	KeyPrefix      *string    `json:"key_prefix,omitempty"`
+	Queues         []string   `json:"queues,omitempty"`
+	RateLimit      *int       `json:"rate_limit,omitempty"`
+	IsActive       bool       `json:"is_active"`
+	CreatedAt      time.Time  `json:"created_at"`
 	LastUsed       *time.Time `json:"last_used,omitempty"`
 	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
 }
@@ -52,5 +52,3 @@ type UpdateAPIKeyRequest struct {
 	RateLimit *int     `json:"rate_limit,omitempty"`
 	IsActive  *bool    `json:"is_active,omitempty"`
 }
-
-

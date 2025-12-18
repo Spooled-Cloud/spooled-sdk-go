@@ -303,4 +303,3 @@ func AsAPIError(err error) (*APIError, bool) {
 	}
 	return nil, false
 }
-

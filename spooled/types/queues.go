@@ -27,22 +27,22 @@ type QueueConfigSummary struct {
 
 // UpdateQueueConfigRequest is the request to update queue configuration.
 type UpdateQueueConfigRequest struct {
-	MaxRetries     *int    `json:"max_retries,omitempty"`
-	DefaultTimeout *int    `json:"default_timeout,omitempty"`
-	RateLimit      *int    `json:"rate_limit,omitempty"`
-	Enabled        *bool   `json:"enabled,omitempty"`
+	MaxRetries     *int  `json:"max_retries,omitempty"`
+	DefaultTimeout *int  `json:"default_timeout,omitempty"`
+	RateLimit      *int  `json:"rate_limit,omitempty"`
+	Enabled        *bool `json:"enabled,omitempty"`
 }
 
 // QueueStats represents queue statistics.
 type QueueStats struct {
-	QueueName           string  `json:"queue_name"`
-	PendingJobs         int     `json:"pending_jobs"`
-	ProcessingJobs      int     `json:"processing_jobs"`
-	CompletedJobs24h    int     `json:"completed_jobs_24h"`
-	FailedJobs24h       int     `json:"failed_jobs_24h"`
-	AvgProcessingTimeMs *int    `json:"avg_processing_time_ms,omitempty"`
-	MaxJobAgeSeconds    *int    `json:"max_job_age_seconds,omitempty"`
-	ActiveWorkers       int     `json:"active_workers"`
+	QueueName           string `json:"queue_name"`
+	PendingJobs         int    `json:"pending_jobs"`
+	ProcessingJobs      int    `json:"processing_jobs"`
+	CompletedJobs24h    int    `json:"completed_jobs_24h"`
+	FailedJobs24h       int    `json:"failed_jobs_24h"`
+	AvgProcessingTimeMs *int   `json:"avg_processing_time_ms,omitempty"`
+	MaxJobAgeSeconds    *int   `json:"max_job_age_seconds,omitempty"`
+	ActiveWorkers       int    `json:"active_workers"`
 }
 
 // PauseQueueRequest is the request to pause a queue.
@@ -64,5 +64,3 @@ type ResumeQueueResponse struct {
 	Resumed            bool   `json:"resumed"`
 	PausedDurationSecs int    `json:"paused_duration_secs"`
 }
-
-

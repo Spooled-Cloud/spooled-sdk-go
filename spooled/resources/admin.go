@@ -181,5 +181,3 @@ func (r *AdminResource) CreateAPIKey(ctx context.Context, orgID string, req *Adm
 	}
 	return &result, nil
 }
-
-

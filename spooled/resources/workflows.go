@@ -90,14 +90,14 @@ const (
 
 // WorkflowJobDefinition defines a job within a workflow.
 type WorkflowJobDefinition struct {
-	Key            string         `json:"key"`
-	QueueName      string         `json:"queue_name"`
-	Payload        map[string]any `json:"payload"`
-	DependsOn      []string       `json:"depends_on,omitempty"`
+	Key            string          `json:"key"`
+	QueueName      string          `json:"queue_name"`
+	Payload        map[string]any  `json:"payload"`
+	DependsOn      []string        `json:"depends_on,omitempty"`
 	DependencyMode *DependencyMode `json:"dependency_mode,omitempty"`
-	Priority       *int           `json:"priority,omitempty"`
-	MaxRetries     *int           `json:"max_retries,omitempty"`
-	TimeoutSeconds *int           `json:"timeout_seconds,omitempty"`
+	Priority       *int            `json:"priority,omitempty"`
+	MaxRetries     *int            `json:"max_retries,omitempty"`
+	TimeoutSeconds *int            `json:"timeout_seconds,omitempty"`
 }
 
 // CreateWorkflowRequest is the request to create a workflow.
@@ -248,5 +248,3 @@ func (r *WorkflowsResource) AddJobDependencies(ctx context.Context, jobID string
 	}
 	return &result, nil
 }
-
-

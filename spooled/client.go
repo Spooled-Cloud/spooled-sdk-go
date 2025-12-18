@@ -78,14 +78,14 @@ func (w *SpooledWorker) Start() error {
 
 	// Create low-level worker
 	workerOpts := worker.Options{
-		QueueName:      opts.QueueName,
-		Concurrency:    opts.Concurrency,
-		PollInterval:   opts.PollInterval,
-		LeaseDuration:  opts.LeaseDuration,
-		Hostname:       opts.Hostname,
-		WorkerType:     opts.WorkerType,
-		Version:        opts.Version,
-		Metadata:       opts.Metadata,
+		QueueName:     opts.QueueName,
+		Concurrency:   opts.Concurrency,
+		PollInterval:  opts.PollInterval,
+		LeaseDuration: opts.LeaseDuration,
+		Hostname:      opts.Hostname,
+		WorkerType:    opts.WorkerType,
+		Version:       opts.Version,
+		Metadata:      opts.Metadata,
 	}
 
 	w.worker = worker.NewWorker(w.jobs, w.workers, workerOpts)
@@ -369,13 +369,6 @@ func (c *Client) GRPC() (*grpc.Client, error) {
 // 	}, opts...)
 // }
 
-// log logs a debug message if logging is enabled.
-func (c *Client) log(msg string, keysAndValues ...any) {
-	if c.cfg.Logger != nil {
-		c.cfg.Logger.Debug(msg, keysAndValues...)
-	}
-}
-
 // NewSpooledWorker creates a new Spooled worker for processing jobs.
 //
 // Example:
@@ -400,17 +393,4 @@ func NewSpooledWorker(c *Client, opts SpooledWorkerOptions) *SpooledWorker {
 		workers: c.Workers(),
 		opts:    opts,
 	}
-}
-
-// Timestamp helpers
-func now() time.Time {
-	return time.Now().UTC()
-}
-
-func parseTime(s string) (time.Time, error) {
-	return time.Parse(time.RFC3339, s)
-}
-
-func formatTime(t time.Time) string {
-	return t.UTC().Format(time.RFC3339)
 }

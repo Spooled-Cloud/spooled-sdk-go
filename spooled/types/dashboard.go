@@ -64,5 +64,3 @@ type HealthResponse struct {
 	Cache     bool      `json:"cache"`
 	Timestamp time.Time `json:"timestamp,omitempty"`
 }
-
-

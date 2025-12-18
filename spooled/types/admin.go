@@ -4,13 +4,13 @@ import "time"
 
 // AdminStats contains platform-wide statistics.
 type AdminStats struct {
-	TotalOrganizations int                `json:"total_organizations"`
-	TotalJobs          int                `json:"total_jobs"`
-	TotalWorkers       int                `json:"total_workers"`
-	TotalQueues        int                `json:"total_queues"`
-	TotalAPIKeys       int                `json:"total_api_keys"`
-	JobsByStatus       map[string]int     `json:"jobs_by_status"`
-	OrganizationsByPlan map[string]int    `json:"organizations_by_plan"`
+	TotalOrganizations  int            `json:"total_organizations"`
+	TotalJobs           int            `json:"total_jobs"`
+	TotalWorkers        int            `json:"total_workers"`
+	TotalQueues         int            `json:"total_queues"`
+	TotalAPIKeys        int            `json:"total_api_keys"`
+	JobsByStatus        map[string]int `json:"jobs_by_status"`
+	OrganizationsByPlan map[string]int `json:"organizations_by_plan"`
 }
 
 // PlanInfo contains information about a subscription plan.
@@ -31,10 +31,10 @@ type PlanPrice struct {
 
 // AdminListOrganizationsParams are parameters for admin listing organizations.
 type AdminListOrganizationsParams struct {
-	PlanTier  *PlanTier `json:"plan_tier,omitempty"`
-	Search    *string   `json:"search,omitempty"`
-	Limit     *int      `json:"limit,omitempty"`
-	Offset    *int      `json:"offset,omitempty"`
+	PlanTier *PlanTier `json:"plan_tier,omitempty"`
+	Search   *string   `json:"search,omitempty"`
+	Limit    *int      `json:"limit,omitempty"`
+	Offset   *int      `json:"offset,omitempty"`
 }
 
 // AdminCreateOrganizationRequest is the admin request to create an organization.
@@ -82,5 +82,3 @@ type CustomWebhookResponse struct {
 	JobID   string `json:"job_id"`
 	Created bool   `json:"created"`
 }
-
-

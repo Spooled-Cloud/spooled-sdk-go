@@ -14,18 +14,18 @@ const (
 
 // Worker represents a worker.
 type Worker struct {
-	ID               string       `json:"id"`
-	OrganizationID   string       `json:"organization_id"`
-	QueueName        string       `json:"queue_name"`
-	Hostname         string       `json:"hostname"`
-	WorkerType       *string      `json:"worker_type,omitempty"`
-	MaxConcurrency   int          `json:"max_concurrency"`
-	CurrentJobs      int          `json:"current_jobs"`
-	Status           WorkerStatus `json:"status"`
-	LastHeartbeat    time.Time    `json:"last_heartbeat"`
-	Metadata         JsonObject   `json:"metadata"`
-	Version          *string      `json:"version,omitempty"`
-	RegisteredAt     time.Time    `json:"registered_at"`
+	ID             string       `json:"id"`
+	OrganizationID string       `json:"organization_id"`
+	QueueName      string       `json:"queue_name"`
+	Hostname       string       `json:"hostname"`
+	WorkerType     *string      `json:"worker_type,omitempty"`
+	MaxConcurrency int          `json:"max_concurrency"`
+	CurrentJobs    int          `json:"current_jobs"`
+	Status         WorkerStatus `json:"status"`
+	LastHeartbeat  time.Time    `json:"last_heartbeat"`
+	Metadata       JsonObject   `json:"metadata"`
+	Version        *string      `json:"version,omitempty"`
+	RegisteredAt   time.Time    `json:"registered_at"`
 }
 
 // WorkerSummary is a summary of a worker.
@@ -63,5 +63,3 @@ type WorkerHeartbeatRequest struct {
 	Status      *string     `json:"status,omitempty"`
 	Metadata    *JsonObject `json:"metadata,omitempty"`
 }
-
-

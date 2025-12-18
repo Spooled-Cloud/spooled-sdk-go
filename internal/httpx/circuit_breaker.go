@@ -162,5 +162,3 @@ type CircuitBreakerMetrics struct {
 	SuccessCount    int
 	LastStateChange time.Time
 }
-
-

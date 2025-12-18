@@ -6,16 +6,16 @@ import "time"
 type WebhookEvent string
 
 const (
-	WebhookEventJobCreated          WebhookEvent = "job.created"
-	WebhookEventJobStarted          WebhookEvent = "job.started"
-	WebhookEventJobCompleted        WebhookEvent = "job.completed"
-	WebhookEventJobFailed           WebhookEvent = "job.failed"
-	WebhookEventJobCancelled        WebhookEvent = "job.cancelled"
-	WebhookEventQueuePaused         WebhookEvent = "queue.paused"
-	WebhookEventQueueResumed        WebhookEvent = "queue.resumed"
-	WebhookEventWorkerRegistered    WebhookEvent = "worker.registered"
-	WebhookEventWorkerDeregistered  WebhookEvent = "worker.deregistered"
-	WebhookEventScheduleTriggered   WebhookEvent = "schedule.triggered"
+	WebhookEventJobCreated         WebhookEvent = "job.created"
+	WebhookEventJobStarted         WebhookEvent = "job.started"
+	WebhookEventJobCompleted       WebhookEvent = "job.completed"
+	WebhookEventJobFailed          WebhookEvent = "job.failed"
+	WebhookEventJobCancelled       WebhookEvent = "job.cancelled"
+	WebhookEventQueuePaused        WebhookEvent = "queue.paused"
+	WebhookEventQueueResumed       WebhookEvent = "queue.resumed"
+	WebhookEventWorkerRegistered   WebhookEvent = "worker.registered"
+	WebhookEventWorkerDeregistered WebhookEvent = "worker.deregistered"
+	WebhookEventScheduleTriggered  WebhookEvent = "schedule.triggered"
 )
 
 // OutgoingWebhook represents an outgoing webhook configuration.
@@ -96,5 +96,3 @@ type RetryDeliveryResponse struct {
 	DeliveryID string  `json:"delivery_id"`
 	Error      *string `json:"error,omitempty"`
 }
-
-

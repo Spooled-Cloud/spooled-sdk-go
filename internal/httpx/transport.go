@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -161,16 +161,16 @@ func (t *Transport) SetRefreshToken(token string) {
 
 // Request represents an HTTP request to be made.
 type Request struct {
-	Method       string
-	Path         string
-	Body         any
+	Method string
+	Path   string
+	Body   any
 	// RawBody, when set, is sent verbatim as the request body (skips JSON marshalling of Body).
 	// Useful for webhook ingestion endpoints that require signature verification over the exact bytes.
-	RawBody      []byte
-	Query        map[string]string
-	Headers      map[string]string
-	UseAdminKey  bool
-	Idempotent   bool // If true, can be retried for POST
+	RawBody     []byte
+	Query       map[string]string
+	Headers     map[string]string
+	UseAdminKey bool
+	Idempotent  bool // If true, can be retried for POST
 }
 
 // Response represents an HTTP response.
@@ -397,4 +397,3 @@ func JSONArray[T any](resp *Response) ([]T, error) {
 	}
 	return result, nil
 }
-

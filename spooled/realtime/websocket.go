@@ -27,12 +27,12 @@ type WebSocketClient struct {
 	allEventHandlers    []EventHandler
 	stateChangeHandlers []StateChangeHandler
 
-	mu       sync.RWMutex
-	cmdMu    sync.Mutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	done     chan struct{}
-	cmdSeq   int
+	mu     sync.RWMutex
+	cmdMu  sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
+	cmdSeq int
 }
 
 // NewWebSocketClient creates a new WebSocket realtime client.
@@ -551,5 +551,3 @@ func isWorkerEvent(t EventType) bool {
 	}
 	return false
 }
-
-

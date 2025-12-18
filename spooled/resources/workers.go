@@ -105,5 +105,3 @@ func (r *WorkersResource) Heartbeat(ctx context.Context, id string, req *WorkerH
 func (r *WorkersResource) Deregister(ctx context.Context, id string) error {
 	return r.base.Delete(ctx, fmt.Sprintf("/api/v1/workers/%s", id))
 }
-
-

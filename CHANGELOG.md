@@ -90,6 +90,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runnable examples for all major features
 - Integration test suite
 
+## [1.0.3] - 2024-12-18
+
+### Fixed
+
+- Fixed all golangci-lint errors for clean CI builds
+- Removed unused code (functions, variables, imports)
+- Fixed code formatting across all files (gofmt)
+- Removed deprecated `rand.Seed` call (auto-seeded in Go 1.20+)
+- Updated linter exclusions for test files, scripts, and deprecation warnings
+
 ## [1.0.2] - 2024-12-18
 
 ### Fixed
@@ -106,7 +116,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced metrics integration
 - OpenTelemetry tracing support
 
+[1.0.3]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.3
 [1.0.2]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.2
 [1.0.0]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.0
-[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.3...HEAD
 

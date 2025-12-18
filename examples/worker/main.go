@@ -131,5 +131,3 @@ func main() {
 
 	fmt.Println("\n✓ Worker example complete!")
 }
-
-

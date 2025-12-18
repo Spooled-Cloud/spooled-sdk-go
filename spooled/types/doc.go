@@ -24,5 +24,3 @@
 // Unknown values returned by the API will be preserved and can be compared
 // as strings.
 package types
-
-

@@ -46,5 +46,3 @@ func TestShortUserAgent(t *testing.T) {
 		t.Errorf("ShortUserAgent() = %q, want %q", ua, expected)
 	}
 }
-
-

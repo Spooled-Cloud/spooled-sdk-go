@@ -9,7 +9,7 @@ import (
 // SDK version constants
 const (
 	// Version is the current SDK version.
-	Version = "1.0.2"
+	Version = "1.0.3"
 
 	// SDKName is the name of the SDK.
 	SDKName = "spooled-go"
@@ -24,5 +24,3 @@ func UserAgent() string {
 func ShortUserAgent() string {
 	return fmt.Sprintf("%s/%s", SDKName, Version)
 }
-
-

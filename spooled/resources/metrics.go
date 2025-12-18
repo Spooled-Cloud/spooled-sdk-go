@@ -18,10 +18,10 @@ func NewMetricsResource(transport *httpx.Transport) *MetricsResource {
 
 // Metrics represents system metrics.
 type Metrics struct {
-	Jobs     JobMetrics     `json:"jobs"`
-	Workers  WorkerMetrics  `json:"workers"`
-	Queues   QueueMetrics   `json:"queues"`
-	System   SystemMetrics  `json:"system"`
+	Jobs    JobMetrics    `json:"jobs"`
+	Workers WorkerMetrics `json:"workers"`
+	Queues  QueueMetrics  `json:"queues"`
+	System  SystemMetrics `json:"system"`
 }
 
 // JobMetrics contains job-related metrics.
@@ -42,18 +42,18 @@ type WorkerMetrics struct {
 
 // QueueMetrics contains queue-related metrics.
 type QueueMetrics struct {
-	TotalQueues    int `json:"total_queues"`
-	TotalPaused    int `json:"total_paused"`
-	TotalPending   int `json:"total_pending"`
+	TotalQueues     int `json:"total_queues"`
+	TotalPaused     int `json:"total_paused"`
+	TotalPending    int `json:"total_pending"`
 	TotalProcessing int `json:"total_processing"`
 }
 
 // SystemMetrics contains system-level metrics.
 type SystemMetrics struct {
-	UptimeSeconds   int64  `json:"uptime_seconds"`
-	RequestsPerSec  float64 `json:"requests_per_sec"`
-	ErrorRate       float64 `json:"error_rate"`
-	AvgLatencyMs    float64 `json:"avg_latency_ms"`
+	UptimeSeconds  int64   `json:"uptime_seconds"`
+	RequestsPerSec float64 `json:"requests_per_sec"`
+	ErrorRate      float64 `json:"error_rate"`
+	AvgLatencyMs   float64 `json:"avg_latency_ms"`
 }
 
 // Get retrieves system metrics.
@@ -73,5 +73,3 @@ func (r *MetricsResource) Prometheus(ctx context.Context) (string, error) {
 	}
 	return result, nil
 }
-
-

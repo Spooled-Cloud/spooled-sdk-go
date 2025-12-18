@@ -77,4 +77,3 @@ func (r *DashboardResource) Get(ctx context.Context) (*DashboardData, error) {
 	}
 	return &result, nil
 }
-

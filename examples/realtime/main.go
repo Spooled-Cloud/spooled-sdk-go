@@ -52,9 +52,9 @@ func main() {
 	// Create WebSocket client
 	fmt.Println("Creating WebSocket client...")
 	ws := realtime.NewWebSocketClient(realtime.ConnectionOptions{
-		WSURL:     wsURL,
-		APIKey:    apiKey,
-		Debug:     true,
+		WSURL:  wsURL,
+		APIKey: apiKey,
+		Debug:  true,
 		Logger: func(msg string, args ...any) {
 			fmt.Printf("[WS] "+msg+"\n", args...)
 		},
@@ -131,5 +131,3 @@ func main() {
 
 	fmt.Println("\n✓ Realtime example complete!")
 }
-
-

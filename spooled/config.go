@@ -278,4 +278,3 @@ func deriveWSURL(baseURL string) string {
 	}
 	return baseURL
 }
-

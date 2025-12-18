@@ -128,5 +128,3 @@ type AddDependenciesResponse struct {
 	Success      bool     `json:"success"`
 	Dependencies []string `json:"dependencies"`
 }
-
-

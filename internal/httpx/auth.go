@@ -12,19 +12,18 @@ import (
 
 // TokenRefresher handles automatic token refresh.
 type TokenRefresher struct {
-	mu           sync.Mutex
-	refreshing   bool
-	waiters      int
-	done         chan struct{}
-	
+	mu         sync.Mutex
+	refreshing bool
+	done       chan struct{}
+
 	baseURL      string
 	apiKey       string
 	refreshToken string
 	accessToken  string
 	expiresAt    time.Time
-	
-	client       *http.Client
-	logger       Logger
+
+	client *http.Client
+	logger Logger
 }
 
 // NewTokenRefresher creates a new token refresher.
@@ -101,12 +100,12 @@ func (tr *TokenRefresher) ForceRefresh(ctx context.Context) error {
 // refreshInternal performs the actual refresh with optional force flag.
 func (tr *TokenRefresher) refreshInternal(ctx context.Context, force bool) error {
 	tr.mu.Lock()
-	
+
 	// If another goroutine is already refreshing, wait for it
 	if tr.refreshing {
 		done := tr.done
 		tr.mu.Unlock()
-		
+
 		// Wait for refresh to complete
 		select {
 		case <-done:
@@ -115,20 +114,20 @@ func (tr *TokenRefresher) refreshInternal(ctx context.Context, force bool) error
 			return ctx.Err()
 		}
 	}
-	
+
 	// Check if token was already refreshed by another goroutine (unless forced)
 	if !force && !tr.needsRefreshLocked() && tr.accessToken != "" {
 		tr.mu.Unlock()
 		return nil
 	}
-	
+
 	// Mark as refreshing and create done channel
 	tr.refreshing = true
 	tr.done = make(chan struct{})
 	refreshToken := tr.refreshToken
 	apiKey := tr.apiKey
 	tr.mu.Unlock()
-	
+
 	// Perform refresh
 	var err error
 	defer func() {
@@ -137,7 +136,7 @@ func (tr *TokenRefresher) refreshInternal(ctx context.Context, force bool) error
 		close(tr.done)
 		tr.mu.Unlock()
 	}()
-	
+
 	if refreshToken != "" {
 		err = tr.refreshWithToken(ctx, refreshToken)
 	} else if apiKey != "" {
@@ -145,7 +144,7 @@ func (tr *TokenRefresher) refreshInternal(ctx context.Context, force bool) error
 	} else {
 		return fmt.Errorf("no refresh token or API key available")
 	}
-	
+
 	return err
 }
 
@@ -163,7 +162,7 @@ func (tr *TokenRefresher) needsRefreshLocked() bool {
 // refreshWithToken refreshes using a refresh token.
 func (tr *TokenRefresher) refreshWithToken(ctx context.Context, refreshToken string) error {
 	tr.log("refreshing token using refresh_token")
-	
+
 	body := fmt.Sprintf(`{"refresh_token":"%s"}`, refreshToken)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		tr.baseURL+"/api/v1/auth/refresh",
@@ -171,15 +170,15 @@ func (tr *TokenRefresher) refreshWithToken(ctx context.Context, refreshToken str
 	if err != nil {
 		return fmt.Errorf("failed to create refresh request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := tr.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("refresh request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		// If refresh token is invalid, try API key if available
 		if resp.StatusCode == http.StatusUnauthorized && tr.apiKey != "" {
@@ -187,7 +186,7 @@ func (tr *TokenRefresher) refreshWithToken(ctx context.Context, refreshToken str
 		}
 		return fmt.Errorf("refresh failed with status %d", resp.StatusCode)
 	}
-	
+
 	var result struct {
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int    `json:"expires_in"`
@@ -195,17 +194,17 @@ func (tr *TokenRefresher) refreshWithToken(ctx context.Context, refreshToken str
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("failed to decode refresh response: %w", err)
 	}
-	
+
 	tr.SetAccessToken(result.AccessToken, result.ExpiresIn)
 	tr.log("token refreshed successfully", "expires_in", result.ExpiresIn)
-	
+
 	return nil
 }
 
 // refreshWithAPIKey performs a fresh login using the API key.
 func (tr *TokenRefresher) refreshWithAPIKey(ctx context.Context, apiKey string) error {
 	tr.log("refreshing token using api_key (re-login)")
-	
+
 	body := fmt.Sprintf(`{"api_key":"%s"}`, apiKey)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		tr.baseURL+"/api/v1/auth/login",
@@ -213,19 +212,19 @@ func (tr *TokenRefresher) refreshWithAPIKey(ctx context.Context, apiKey string) 
 	if err != nil {
 		return fmt.Errorf("failed to create login request: %w", err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := tr.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("login request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("login failed with status %d", resp.StatusCode)
 	}
-	
+
 	var result struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
@@ -234,11 +233,11 @@ func (tr *TokenRefresher) refreshWithAPIKey(ctx context.Context, apiKey string) 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("failed to decode login response: %w", err)
 	}
-	
+
 	tr.SetAccessToken(result.AccessToken, result.ExpiresIn)
 	tr.SetRefreshToken(result.RefreshToken)
 	tr.log("re-login successful", "expires_in", result.ExpiresIn)
-	
+
 	return nil
 }
 
@@ -248,4 +247,3 @@ func (tr *TokenRefresher) log(msg string, keysAndValues ...any) {
 		tr.logger.Debug(msg, keysAndValues...)
 	}
 }
-

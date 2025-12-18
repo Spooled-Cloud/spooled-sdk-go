@@ -80,4 +80,3 @@ func (p *RetryPolicy) DelayWithJitter(attempt int, jitterFactor float64) time.Du
 func (p *RetryPolicy) ShouldRetry(attempt int) bool {
 	return attempt < p.MaxRetries
 }
-

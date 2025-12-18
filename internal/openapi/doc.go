@@ -5,5 +5,3 @@
 package openapi
 
 //go:generate ../../scripts/generate_openapi.sh
-
-

@@ -80,5 +80,3 @@ type VerifyEmailResponse struct {
 	ExpiresIn        int    `json:"expires_in"`
 	RefreshExpiresIn int    `json:"refresh_expires_in"`
 }
-
-

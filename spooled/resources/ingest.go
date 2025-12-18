@@ -190,5 +190,3 @@ func stripeSignature(secret string, body []byte, timestamp int64) string {
 	_, _ = mac.Write([]byte(payload))
 	return "t=" + strconv.FormatInt(timestamp, 10) + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
-
-

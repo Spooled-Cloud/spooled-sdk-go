@@ -200,5 +200,3 @@ func (r *SchedulesResource) History(ctx context.Context, id string, limit *int) 
 	}
 	return result, nil
 }
-
-

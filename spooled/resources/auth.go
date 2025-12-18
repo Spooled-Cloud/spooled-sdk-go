@@ -163,5 +163,3 @@ func (r *AuthResource) VerifyEmail(ctx context.Context, req *VerifyEmailRequest)
 	}
 	return &result, nil
 }
-
-

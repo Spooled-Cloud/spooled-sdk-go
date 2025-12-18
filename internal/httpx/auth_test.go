@@ -13,7 +13,7 @@ import (
 
 func TestTokenRefresher_RefreshWithToken(t *testing.T) {
 	refreshCount := int32(0)
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/auth/refresh" {
 			atomic.AddInt32(&refreshCount, 1)
@@ -47,7 +47,7 @@ func TestTokenRefresher_RefreshWithToken(t *testing.T) {
 
 func TestTokenRefresher_RefreshWithAPIKey(t *testing.T) {
 	loginCount := int32(0)
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/auth/login" {
 			atomic.AddInt32(&loginCount, 1)
@@ -83,7 +83,7 @@ func TestTokenRefresher_RefreshWithAPIKey(t *testing.T) {
 func TestTokenRefresher_SingleFlight(t *testing.T) {
 	refreshCount := int32(0)
 	var wg sync.WaitGroup
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/auth/refresh" {
 			atomic.AddInt32(&refreshCount, 1)
@@ -149,7 +149,7 @@ func TestTokenRefresher_NeedsRefresh(t *testing.T) {
 func TestTokenRefresher_FallbackToAPIKey(t *testing.T) {
 	refreshCount := int32(0)
 	loginCount := int32(0)
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/auth/refresh" {
 			atomic.AddInt32(&refreshCount, 1)
@@ -196,7 +196,7 @@ func TestTokenRefresher_FallbackToAPIKey(t *testing.T) {
 func TestTransport_AutoRefresh401(t *testing.T) {
 	requestCount := int32(0)
 	refreshCount := int32(0)
-	
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/auth/refresh" {
 			atomic.AddInt32(&refreshCount, 1)
@@ -207,7 +207,7 @@ func TestTransport_AutoRefresh401(t *testing.T) {
 			})
 			return
 		}
-		
+
 		if r.URL.Path == "/api/v1/test" {
 			count := atomic.AddInt32(&requestCount, 1)
 			// First request returns 401, second request succeeds
@@ -220,7 +220,7 @@ func TestTransport_AutoRefresh401(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 			return
 		}
-		
+
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
@@ -255,5 +255,3 @@ func TestTransport_AutoRefresh401(t *testing.T) {
 		t.Errorf("Expected 1 refresh, got %d", refreshCount)
 	}
 }
-
-

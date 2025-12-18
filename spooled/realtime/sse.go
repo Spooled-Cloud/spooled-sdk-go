@@ -469,5 +469,3 @@ func (c *SSEClient) log(format string, args ...any) {
 		fmt.Printf("[spooled-sse] "+format+"\n", args...)
 	}
 }
-
-

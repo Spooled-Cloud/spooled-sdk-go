@@ -177,9 +177,9 @@ func (r *WebhooksResource) Deliveries(ctx context.Context, id string, params *Li
 
 // RetryDeliveryResponse is the response from retrying a webhook delivery.
 type RetryDeliveryResponse struct {
-	Success    bool    `json:"success"`
-	Message    *string `json:"message,omitempty"`
-	Error      *string `json:"error,omitempty"`
+	Success bool    `json:"success"`
+	Message *string `json:"message,omitempty"`
+	Error   *string `json:"error,omitempty"`
 }
 
 // RetryDelivery retries a failed webhook delivery.
@@ -190,5 +190,3 @@ func (r *WebhooksResource) RetryDelivery(ctx context.Context, webhookID, deliver
 	}
 	return &result, nil
 }
-
-

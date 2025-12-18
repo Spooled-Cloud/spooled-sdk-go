@@ -159,8 +159,8 @@ type RealtimeClient interface {
 
 // WebSocket command types
 type wsCommand struct {
-	Type      string             `json:"type"`
-	RequestID string             `json:"request_id,omitempty"`
+	Type      string              `json:"type"`
+	RequestID string              `json:"request_id,omitempty"`
 	Filter    *SubscriptionFilter `json:"filter,omitempty"`
 }
 
@@ -169,5 +169,3 @@ type wsResponse struct {
 	RequestID string `json:"request_id,omitempty"`
 	Error     string `json:"error,omitempty"`
 }
-
-

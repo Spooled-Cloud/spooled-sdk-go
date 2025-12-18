@@ -33,5 +33,3 @@ func Bool(v bool) *bool {
 func Time(v time.Time) *time.Time {
 	return &v
 }
-
-

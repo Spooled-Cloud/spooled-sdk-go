@@ -48,8 +48,8 @@ type CreateOrganizationRequest struct {
 
 // CreateOrganizationResponse is the response from creating an organization.
 type CreateOrganizationResponse struct {
-	Organization Organization          `json:"organization"`
-	APIKey       CreateAPIKeyResponse  `json:"api_key"`
+	Organization Organization         `json:"organization"`
+	APIKey       CreateAPIKeyResponse `json:"api_key"`
 }
 
 // UpdateOrganizationRequest is the request to update an organization.
@@ -61,10 +61,10 @@ type UpdateOrganizationRequest struct {
 
 // UsageInfo represents organization usage information.
 type UsageInfo struct {
-	Plan            string        `json:"plan"`
-	PlanDisplayName string        `json:"plan_display_name"`
-	Limits          PlanLimits    `json:"limits"`
-	Usage           ResourceUsage `json:"usage"`
+	Plan            string         `json:"plan"`
+	PlanDisplayName string         `json:"plan_display_name"`
+	Limits          PlanLimits     `json:"limits"`
+	Usage           ResourceUsage  `json:"usage"`
 	Warnings        []UsageWarning `json:"warnings,omitempty"`
 }
 
@@ -142,5 +142,3 @@ type WebhookTokenResponse struct {
 	WebhookToken *string `json:"webhook_token,omitempty"`
 	WebhookURL   *string `json:"webhook_url,omitempty"`
 }
-
-

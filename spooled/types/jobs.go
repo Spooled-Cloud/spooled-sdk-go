@@ -179,11 +179,11 @@ type HeartbeatJobResponse struct {
 
 // BulkEnqueueRequest is the request to bulk enqueue jobs.
 type BulkEnqueueRequest struct {
-	QueueName             string           `json:"queue_name"`
-	Jobs                  []BulkJobItem    `json:"jobs"`
-	DefaultPriority       *int             `json:"default_priority,omitempty"`
-	DefaultMaxRetries     *int             `json:"default_max_retries,omitempty"`
-	DefaultTimeoutSeconds *int             `json:"default_timeout_seconds,omitempty"`
+	QueueName             string        `json:"queue_name"`
+	Jobs                  []BulkJobItem `json:"jobs"`
+	DefaultPriority       *int          `json:"default_priority,omitempty"`
+	DefaultMaxRetries     *int          `json:"default_max_retries,omitempty"`
+	DefaultTimeoutSeconds *int          `json:"default_timeout_seconds,omitempty"`
 }
 
 // BulkJobItem is an individual job in a bulk enqueue request.
@@ -227,7 +227,7 @@ type ListDLQParams struct {
 
 // RetryDLQRequest is the request to retry DLQ jobs.
 type RetryDLQRequest struct {
-	QueueName *string `json:"queue_name,omitempty"`
+	QueueName *string  `json:"queue_name,omitempty"`
 	JobIDs    []string `json:"job_ids,omitempty"`
 }
 
@@ -246,5 +246,3 @@ type PurgeDLQRequest struct {
 type PurgeDLQResponse struct {
 	PurgedCount int `json:"purged_count"`
 }
-
-

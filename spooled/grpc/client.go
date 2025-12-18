@@ -20,10 +20,10 @@ import (
 
 // Client is the gRPC client for Spooled.
 type Client struct {
-	conn          *grpc.ClientConn
-	queueClient   pb.QueueServiceClient
-	workerClient  pb.WorkerServiceClient
-	apiKey        string
+	conn         *grpc.ClientConn
+	queueClient  pb.QueueServiceClient
+	workerClient pb.WorkerServiceClient
+	apiKey       string
 }
 
 // ClientOptions configures the gRPC client.

@@ -50,5 +50,3 @@ func (r *HealthResource) Readiness(ctx context.Context) (*HealthResponse, error)
 	}
 	return &result, nil
 }
-
-

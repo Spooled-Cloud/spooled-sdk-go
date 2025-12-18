@@ -26,18 +26,17 @@ import (
 // ─────────────────────────────────────────────────────────────────────────────
 
 var (
-	baseURL      = getEnv("BASE_URL", "http://localhost:8080")
-	apiKey       = os.Getenv("API_KEY")
-	adminKey     = os.Getenv("ADMIN_KEY")
-	webhookPort  = getEnvInt("WEBHOOK_PORT", 9999)
-	verbose      = getEnvBool("VERBOSE", false)
-	skipStress   = getEnvBool("SKIP_STRESS", true)
-	skipGRPC     = getEnvBool("SKIP_GRPC", false)
-	skipIngest   = getEnvBool("SKIP_INGEST", true)
-	skipRealtime = getEnvBool("SKIP_REALTIME", true)
-	grpcAddress  = getEnv("GRPC_ADDRESS", "localhost:50051")
-	grpcUseTLS   = getEnvBool("GRPC_USE_TLS", false)
-	testPrefix   string
+	baseURL     = getEnv("BASE_URL", "http://localhost:8080")
+	apiKey      = os.Getenv("API_KEY")
+	adminKey    = os.Getenv("ADMIN_KEY")
+	webhookPort = getEnvInt("WEBHOOK_PORT", 9999)
+	verbose     = getEnvBool("VERBOSE", false)
+	skipStress  = getEnvBool("SKIP_STRESS", true)
+	skipGRPC    = getEnvBool("SKIP_GRPC", false)
+	skipIngest  = getEnvBool("SKIP_INGEST", true)
+	grpcAddress = getEnv("GRPC_ADDRESS", "localhost:50051")
+	grpcUseTLS  = getEnvBool("GRPC_USE_TLS", false)
+	testPrefix  string
 	// isProduction detects if we're running against production API (which requires HTTPS webhooks)
 	isProduction bool
 )
@@ -2555,13 +2554,11 @@ func testWorkerIntegration(client *spooled.Client) {
 			MaxConcurrency: &conc,
 		})
 
-		var jobIDs []string
 		for i := 0; i < 3; i++ {
-			resp, _ := client.Jobs().Create(ctx, &resources.CreateJobRequest{
+			_, _ = client.Jobs().Create(ctx, &resources.CreateJobRequest{
 				QueueName: queueName,
 				Payload:   map[string]interface{}{"concurrent": i},
 			})
-			jobIDs = append(jobIDs, resp.ID)
 		}
 
 		claimed, _ := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
@@ -2893,8 +2890,8 @@ func testAdminEndpoints() {
 
 	ctx := context.Background()
 	adminClient, err := spooled.NewClient(
-		spooled.WithAPIKey(apiKey),      // Regular API key for org access
-		spooled.WithAdminKey(adminKey),  // Admin key for admin endpoints
+		spooled.WithAPIKey(apiKey),     // Regular API key for org access
+		spooled.WithAdminKey(adminKey), // Admin key for admin endpoints
 		spooled.WithBaseURL(baseURL),
 		spooled.WithCircuitBreaker(spooled.CircuitBreakerConfig{Enabled: false}),
 	)
@@ -3164,8 +3161,6 @@ func testStressLoad(client *spooled.Client) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	// Detect production environment (prod API requires HTTPS for webhooks)
 	isProduction = strings.Contains(baseURL, "api.spooled.cloud") || strings.Contains(baseURL, "spooled.io")
 	// Auto-enable TLS for gRPC if connecting to production

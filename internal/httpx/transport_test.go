@@ -394,7 +394,7 @@ func TestTransport_Do_CircuitBreaker(t *testing.T) {
 		BaseURL: server.URL,
 		APIKey:  "sp_test_123456789012345678901234567890",
 		Retry: RetryConfig{
-			MaxRetries: 0, // No retries to speed up test
+			MaxRetries: 0,                    // No retries to speed up test
 			BaseDelay:  1 * time.Millisecond, // Must set to indicate config is provided
 			Jitter:     false,
 		},
@@ -525,4 +525,3 @@ func TestJSONArray(t *testing.T) {
 		t.Errorf("len(result) = %d, want 2", len(result))
 	}
 }
-

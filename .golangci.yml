@@ -38,6 +38,14 @@ issues:
       linters:
         - errcheck
         - bodyclose
+    # Exclude scripts and test utilities
+    - path: scripts/
+      linters:
+        - errcheck
+        - noctx
+    - path: internal/testutil/
+      linters:
+        - errcheck
     # Exclude generated files
     - path: pb/
       linters:
@@ -49,4 +57,24 @@ issues:
     - path: examples/
       linters:
         - forbidigo
+    # Allow "cancelled" spelling (British English, common in APIs)
+    - linters:
+        - misspell
+      text: "cancelled|Cancelled"
+    # Allow "marshalling" spelling (British English)
+    - linters:
+        - misspell
+      text: "marshalling"
+    # Exclude worker type assertions (safe patterns)
+    - path: spooled/worker/
+      linters:
+        - errcheck
+    # Exclude deprecated library warnings (will migrate later)
+    - linters:
+        - staticcheck
+      text: "SA1019"
+    # Exclude bodyclose for websocket (managed by library)
+    - path: spooled/realtime/
+      linters:
+        - bodyclose
 

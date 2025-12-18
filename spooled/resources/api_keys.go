@@ -97,5 +97,3 @@ func (r *APIKeysResource) Update(ctx context.Context, id string, req *UpdateAPIK
 func (r *APIKeysResource) Delete(ctx context.Context, id string) error {
 	return r.base.Delete(ctx, fmt.Sprintf("/api/v1/api-keys/%s", id))
 }
-
-

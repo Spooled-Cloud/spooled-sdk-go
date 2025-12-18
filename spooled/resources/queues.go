@@ -143,4 +143,3 @@ func (r *QueuesResource) Resume(ctx context.Context, name string) (*ResumeQueueR
 func (r *QueuesResource) Delete(ctx context.Context, name string) error {
 	return r.base.Delete(ctx, fmt.Sprintf("/api/v1/queues/%s", name))
 }
-

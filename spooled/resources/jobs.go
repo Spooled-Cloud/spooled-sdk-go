@@ -45,33 +45,33 @@ const (
 
 // Job represents a full job object.
 type Job struct {
-	ID                string                 `json:"id"`
-	OrganizationID    string                 `json:"organization_id"`
-	QueueName         string                 `json:"queue_name"`
-	Status            JobStatus              `json:"status"`
-	Payload           map[string]any         `json:"payload"`
-	Result            map[string]any         `json:"result,omitempty"`
-	RetryCount        int                    `json:"retry_count"`
-	MaxRetries        int                    `json:"max_retries"`
-	LastError         *string                `json:"last_error,omitempty"`
-	CreatedAt         time.Time              `json:"created_at"`
-	ScheduledAt       *time.Time             `json:"scheduled_at,omitempty"`
-	StartedAt         *time.Time             `json:"started_at,omitempty"`
-	CompletedAt       *time.Time             `json:"completed_at,omitempty"`
-	ExpiresAt         *time.Time             `json:"expires_at,omitempty"`
-	Priority          int                    `json:"priority"`
-	Tags              map[string]any         `json:"tags,omitempty"`
-	TimeoutSeconds    int                    `json:"timeout_seconds"`
-	ParentJobID       *string                `json:"parent_job_id,omitempty"`
-	CompletionWebhook *string                `json:"completion_webhook,omitempty"`
-	AssignedWorkerID  *string                `json:"assigned_worker_id,omitempty"`
-	LeaseID           *string                `json:"lease_id,omitempty"`
-	LeaseExpiresAt    *time.Time             `json:"lease_expires_at,omitempty"`
-	IdempotencyKey    *string                `json:"idempotency_key,omitempty"`
-	UpdatedAt         time.Time              `json:"updated_at"`
-	WorkflowID        *string                `json:"workflow_id,omitempty"`
-	DependencyMode    *string                `json:"dependency_mode,omitempty"`
-	DependenciesMet   *bool                  `json:"dependencies_met,omitempty"`
+	ID                string         `json:"id"`
+	OrganizationID    string         `json:"organization_id"`
+	QueueName         string         `json:"queue_name"`
+	Status            JobStatus      `json:"status"`
+	Payload           map[string]any `json:"payload"`
+	Result            map[string]any `json:"result,omitempty"`
+	RetryCount        int            `json:"retry_count"`
+	MaxRetries        int            `json:"max_retries"`
+	LastError         *string        `json:"last_error,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	ScheduledAt       *time.Time     `json:"scheduled_at,omitempty"`
+	StartedAt         *time.Time     `json:"started_at,omitempty"`
+	CompletedAt       *time.Time     `json:"completed_at,omitempty"`
+	ExpiresAt         *time.Time     `json:"expires_at,omitempty"`
+	Priority          int            `json:"priority"`
+	Tags              map[string]any `json:"tags,omitempty"`
+	TimeoutSeconds    int            `json:"timeout_seconds"`
+	ParentJobID       *string        `json:"parent_job_id,omitempty"`
+	CompletionWebhook *string        `json:"completion_webhook,omitempty"`
+	AssignedWorkerID  *string        `json:"assigned_worker_id,omitempty"`
+	LeaseID           *string        `json:"lease_id,omitempty"`
+	LeaseExpiresAt    *time.Time     `json:"lease_expires_at,omitempty"`
+	IdempotencyKey    *string        `json:"idempotency_key,omitempty"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	WorkflowID        *string        `json:"workflow_id,omitempty"`
+	DependencyMode    *string        `json:"dependency_mode,omitempty"`
+	DependenciesMet   *bool          `json:"dependencies_met,omitempty"`
 }
 
 // CreateJobRequest is the request to create a new job.
@@ -452,4 +452,3 @@ func (r *DLQResource) Purge(ctx context.Context, req *PurgeDLQRequest) (*PurgeDL
 	}
 	return &result, nil
 }
-

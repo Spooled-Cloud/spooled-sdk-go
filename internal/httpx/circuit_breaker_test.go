@@ -221,5 +221,3 @@ func TestCircuitState_String(t *testing.T) {
 		}
 	}
 }
-
-

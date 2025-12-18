@@ -188,5 +188,3 @@ func TestValidateAPIKey(t *testing.T) {
 		})
 	}
 }
-
-

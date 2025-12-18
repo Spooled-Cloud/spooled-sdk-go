@@ -225,5 +225,3 @@ func AddPaginationParams(v url.Values, limit, offset *int) {
 		v.Set("offset", strconv.Itoa(*offset))
 	}
 }
-
-

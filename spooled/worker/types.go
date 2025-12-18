@@ -91,16 +91,16 @@ type JobHandler func(ctx *JobContext) (map[string]any, error)
 type EventType string
 
 const (
-	EventWorkerStarted    EventType = "worker:started"
-	EventWorkerStopped    EventType = "worker:stopped"
-	EventWorkerError      EventType = "worker:error"
-	EventJobClaimed       EventType = "job:claimed"
-	EventJobStarted       EventType = "job:started"
-	EventJobCompleted     EventType = "job:completed"
-	EventJobFailed        EventType = "job:failed"
-	EventJobProgress      EventType = "job:progress"
-	EventJobHeartbeat     EventType = "job:heartbeat"
-	EventWorkerHeartbeat  EventType = "worker:heartbeat"
+	EventWorkerStarted   EventType = "worker:started"
+	EventWorkerStopped   EventType = "worker:stopped"
+	EventWorkerError     EventType = "worker:error"
+	EventJobClaimed      EventType = "job:claimed"
+	EventJobStarted      EventType = "job:started"
+	EventJobCompleted    EventType = "job:completed"
+	EventJobFailed       EventType = "job:failed"
+	EventJobProgress     EventType = "job:progress"
+	EventJobHeartbeat    EventType = "job:heartbeat"
+	EventWorkerHeartbeat EventType = "worker:heartbeat"
 )
 
 // Event is emitted by the worker during processing.
@@ -158,12 +158,10 @@ type JobFailedData struct {
 
 // JobProgressData is emitted when job progress is updated.
 type JobProgressData struct {
-	JobID    string
-	Percent  float64
-	Message  string
+	JobID   string
+	Percent float64
+	Message string
 }
 
 // EventHandler is a callback for worker events.
 type EventHandler func(event Event)
-
-

@@ -80,5 +80,3 @@
 //   - Billing: Access billing status and portal
 //   - Auth: Authentication and token management
 package spooled
-
-
