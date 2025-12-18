@@ -171,8 +171,13 @@ func TestValidateAPIKey(t *testing.T) {
 		key     string
 		wantErr bool
 	}{
+		// New prefix keys (sp_)
 		{"sp_live_123456789012345678901234567890", false},
 		{"sp_test_123456789012345678901234567890", false},
+		// Legacy prefix keys (sk_) - use clearly fake values to avoid GitHub detection
+		{"sk_live_FAKE_TEST_KEY_12345678901234", false},
+		{"sk_test_FAKE_TEST_KEY_12345678901234", false},
+		// Invalid keys
 		{"sp_live_short", true}, // too short
 		{"sp_test_", true},      // too short
 		{"invalid_key", true},   // wrong prefix

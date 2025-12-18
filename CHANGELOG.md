@@ -5,7 +5,7 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2024-12-18
+## [1.0.0] - 2025-01-18
 
 ### Added
 
@@ -90,7 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runnable examples for all major features
 - Integration test suite
 
-## [1.0.3] - 2024-12-18
+## [1.0.3] - 2025-01-18
 
 ### Fixed
 
@@ -100,11 +100,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed deprecated `rand.Seed` call (auto-seeded in Go 1.20+)
 - Updated linter exclusions for test files, scripts, and deprecation warnings
 
-## [1.0.2] - 2024-12-18
+## [1.0.2] - 2025-01-18
 
 ### Fixed
 
-- Changed API key prefix from `sk_live_`/`sk_test_` to `sp_live_`/`sp_test_` to avoid GitHub secret scanning false positives
+- SDK validation now accepts both `sk_live_`/`sk_test_` (production keys) and `sp_live_`/`sp_test_` (for documentation examples that avoid GitHub secret scanning)
 - Removed deprecated `check-shadowing` option from golangci-lint config (v1.64+ compatibility)
 
 ## [Unreleased]
