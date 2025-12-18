@@ -90,6 +90,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runnable examples for all major features
 - Integration test suite
 
+## [1.0.2] - 2024-12-18
+
+### Fixed
+
+- Changed API key prefix from `sk_live_`/`sk_test_` to `sp_live_`/`sp_test_` to avoid GitHub secret scanning false positives
+- Removed deprecated `check-shadowing` option from golangci-lint config (v1.64+ compatibility)
+
 ## [Unreleased]
 
 ### Planned
@@ -99,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced metrics integration
 - OpenTelemetry tracing support
 
+[1.0.2]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.2
 [1.0.0]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.0
-[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.2...HEAD
 
