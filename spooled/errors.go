@@ -211,18 +211,28 @@ var (
 	ErrNoAuth = errors.New("no authentication configured: set APIKey or AccessToken")
 
 	// ErrInvalidAPIKey is returned when the API key format is invalid.
-	ErrInvalidAPIKey = errors.New("invalid API key format: must start with sp_live_ or sp_test_")
+	ErrInvalidAPIKey = errors.New("invalid API key format: must start with sp_live_, sp_test_, sk_live_, or sk_test_")
 
 	// ErrCircuitOpen is returned when the circuit breaker is open.
 	ErrCircuitOpen = errors.New("circuit breaker is open")
 )
 
 // ValidateAPIKey validates the format of an API key.
+// Accepts both new (sp_) and legacy (sk_) prefixes for backwards compatibility.
 func ValidateAPIKey(key string) error {
 	if key == "" {
 		return ErrNoAuth
 	}
-	if !strings.HasPrefix(key, "sp_live_") && !strings.HasPrefix(key, "sp_test_") {
+	// Accept both new (sp_) and legacy (sk_) prefixes
+	validPrefixes := []string{"sp_live_", "sp_test_", "sk_live_", "sk_test_"}
+	hasValidPrefix := false
+	for _, prefix := range validPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			hasValidPrefix = true
+			break
+		}
+	}
+	if !hasValidPrefix {
 		return ErrInvalidAPIKey
 	}
 	if len(key) < 20 {
