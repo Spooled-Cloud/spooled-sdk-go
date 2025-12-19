@@ -76,4 +76,3 @@ The SDK includes several security features:
 - **Automatic token refresh**: JWT tokens are refreshed automatically
 - **Request signing**: API requests are authenticated per-request
 - **No credential logging**: Credentials are never logged
-

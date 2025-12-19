@@ -77,4 +77,3 @@ issues:
     - path: spooled/realtime/
       linters:
         - bodyclose
-

@@ -120,4 +120,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.2]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.2
 [1.0.0]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.0
 [Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.3...HEAD
-

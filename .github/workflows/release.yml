@@ -53,4 +53,3 @@ jobs:
       - name: Notify pkg.go.dev
         run: |
           curl -s "https://pkg.go.dev/github.com/spooled-cloud/spooled-sdk-go@v${{ steps.release_notes.outputs.version }}" > /dev/null || true
-
