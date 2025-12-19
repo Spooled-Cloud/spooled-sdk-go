@@ -84,6 +84,7 @@ type JobSummary struct {
 type ListJobsParams struct {
 	QueueName *string    `json:"queue_name,omitempty"`
 	Status    *JobStatus `json:"status,omitempty"`
+	Tag       *string    `json:"tag,omitempty"` // Filter by a single tag
 	Limit     *int       `json:"limit,omitempty"`
 	Offset    *int       `json:"offset,omitempty"`
 	OrderBy   *string    `json:"order_by,omitempty"`

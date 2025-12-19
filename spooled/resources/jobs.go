@@ -126,6 +126,7 @@ func (r *JobsResource) Get(ctx context.Context, id string) (*Job, error) {
 type ListJobsParams struct {
 	QueueName *string    `json:"queue_name,omitempty"`
 	Status    *JobStatus `json:"status,omitempty"`
+	Tag       *string    `json:"tag,omitempty"` // Filter by a single tag
 	Limit     *int       `json:"limit,omitempty"`
 	Offset    *int       `json:"offset,omitempty"`
 }
@@ -139,6 +140,9 @@ func (r *JobsResource) List(ctx context.Context, params *ListJobsParams) ([]Job,
 		}
 		if params.Status != nil {
 			query.Set("status", string(*params.Status))
+		}
+		if params.Tag != nil {
+			query.Set("tag", *params.Tag)
 		}
 		AddPaginationParams(query, params.Limit, params.Offset)
 	}

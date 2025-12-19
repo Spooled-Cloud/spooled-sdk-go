@@ -264,7 +264,8 @@ result, err := client.Jobs().Create(ctx, &resources.CreateJobRequest{
 // List jobs
 jobs, err := client.Jobs().List(ctx, &resources.ListJobsParams{
     QueueName: ptr("my-queue"),
-    Status:    ptr("pending"),
+    Status:    ptr(resources.JobStatusPending),
+    Tag:       ptr("billing"), // Optional: filter by a single tag
     Limit:     ptr(10),
 })
 
