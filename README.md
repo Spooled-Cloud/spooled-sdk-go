@@ -2,6 +2,8 @@
 
 Official Go SDK for [Spooled Cloud](https://spooled.cloud) — a modern, scalable job queue and task scheduler.
 
+[**Live Demo (SpriteForge)**](https://example.spooled.cloud) • [Documentation](https://spooled.cloud/docs)
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/spooled-cloud/spooled-sdk-go.svg)](https://pkg.go.dev/github.com/spooled-cloud/spooled-sdk-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/spooled-cloud/spooled-sdk-go)](https://goreportcard.com/report/github.com/spooled-cloud/spooled-sdk-go)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
