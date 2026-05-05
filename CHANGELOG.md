@@ -107,7 +107,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SDK validation now accepts both `sk_live_`/`sk_test_` (production keys) and `sp_live_`/`sp_test_` (for documentation examples that avoid GitHub secret scanning)
 - Removed deprecated `check-shadowing` option from golangci-lint config (v1.64+ compatibility)
 
-## [1.0.10] - 2026-05-05
+## [1.0.11] - 2026-05-05
+
+### Fixed
+
+- CI workflow: scope coverage to packages with tests via `-coverpkg`,
+  drop Go 1.24 from matrix to match the module's minimum Go version
+  (avoids `covdata` toolchain error during `go test -coverprofile`)
+
+### Retracted
+
+- v1.0.10 — proxy.golang.org locked the version to a transient commit
+  during the release dance; the canonical content lives in v1.0.11
+
+## [1.0.10] - 2026-05-05 [RETRACTED]
 
 ### Added
 
@@ -155,6 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced metrics integration
 - OpenTelemetry tracing support
 
+[1.0.11]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.11
 [1.0.10]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.10
 [1.0.9]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.9
 [1.0.8]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.8
@@ -164,4 +178,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.3]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.3
 [1.0.2]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.2
 [1.0.0]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.0
-[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.10...HEAD
+[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.11...HEAD
