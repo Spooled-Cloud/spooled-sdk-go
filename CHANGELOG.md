@@ -107,6 +107,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SDK validation now accepts both `sk_live_`/`sk_test_` (production keys) and `sp_live_`/`sp_test_` (for documentation examples that avoid GitHub secret scanning)
 - Removed deprecated `check-shadowing` option from golangci-lint config (v1.64+ compatibility)
 
+## [1.0.10] - 2026-05-05
+
+### Added
+
+- Client `Realtime()` method returning `RealtimeClient` (WebSocket)
+- Client `RealtimeSSE()` method returning `*SSEClient`
+- Auth helper preferring access token over API key for realtime connections
+- `normalizeRealtimeWSURL` for smart WebSocket URL resolution
+
+## [1.0.9] - 2025-12-21
+
+### Changed
+
+- Added Live Demo (SpriteForge) link to README
+
+## [1.0.8] - 2025-12-20
+
+### Added
+
+- Tag filtering support for job listing
+
+## [1.0.7] - 2025-12-19
+
+### Fixed
+
+- Removed trailing newlines from CI, linter, changelog, contributing, and security files
+
+## [1.0.6] - 2025-12-18
+
+### Changed
+
+- Linked backend real-world examples from documentation
+
+## [1.0.4] - 2025-12-18
+
+### Fixed
+
+- Use fake test keys to avoid GitHub push protection false positives
+
 ## [Unreleased]
 
 ### Planned
@@ -116,7 +155,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced metrics integration
 - OpenTelemetry tracing support
 
+[1.0.10]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.10
+[1.0.9]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.9
+[1.0.8]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.8
+[1.0.7]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.7
+[1.0.6]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.6
+[1.0.4]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.4
 [1.0.3]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.3
 [1.0.2]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.2
 [1.0.0]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.0
-[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.10...HEAD

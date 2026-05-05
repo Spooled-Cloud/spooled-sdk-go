@@ -85,7 +85,12 @@ func (c *SSEClient) doConnect() error {
 	sseURL := c.buildSSEURL()
 	c.log("Connecting to SSE: %s", sseURL)
 
-	req, err := http.NewRequest("GET", sseURL, nil)
+	c.mu.Lock()
+	c.ctx, c.cancel = context.WithCancel(context.Background())
+	ctx := c.ctx
+	c.mu.Unlock()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sseURL, nil)
 	if err != nil {
 		c.mu.Lock()
 		c.setState(StateDisconnected)
@@ -93,23 +98,15 @@ func (c *SSEClient) doConnect() error {
 		return fmt.Errorf("failed to create SSE request: %w", err)
 	}
 
-	// Add authentication headers
 	if c.opts.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.opts.Token)
 	} else if c.opts.APIKey != "" {
 		req.Header.Set("X-API-Key", c.opts.APIKey)
 	}
 
-	// SSE-specific headers
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Connection", "keep-alive")
-
-	c.mu.Lock()
-	c.ctx, c.cancel = context.WithCancel(context.Background())
-	c.mu.Unlock()
-
-	req = req.WithContext(c.ctx)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

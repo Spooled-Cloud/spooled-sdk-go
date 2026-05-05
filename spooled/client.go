@@ -2,12 +2,15 @@ package spooled
 
 import (
 	"context"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/grpc"
+	"github.com/spooled-cloud/spooled-sdk-go/spooled/realtime"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/resources"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/worker"
 )
@@ -361,13 +364,43 @@ func (c *Client) GRPC() (*grpc.Client, error) {
 }
 
 // Realtime returns a realtime client for WebSocket/SSE event streaming.
-// TODO: Implement realtime client
-// func (c *Client) Realtime(opts ...realtime.Option) *realtime.Client {
-// 	return realtime.NewClient(realtime.Config{
-// 		BaseURL: c.cfg.BaseURL,
-// 		APIKey:  c.cfg.APIKey,
-// 	}, opts...)
-// }
+func (c *Client) Realtime() realtime.RealtimeClient {
+	return realtime.NewWebSocketClient(c.realtimeConnectionOptions())
+}
+
+// RealtimeSSE returns an SSE realtime client for one-way event streaming.
+func (c *Client) RealtimeSSE() *realtime.SSEClient {
+	return realtime.NewSSEClient(c.realtimeConnectionOptions())
+}
+
+func (c *Client) realtimeConnectionOptions() realtime.ConnectionOptions {
+	token, apiKey := c.realtimeAuth()
+	return realtime.ConnectionOptions{
+		BaseURL: c.cfg.BaseURL,
+		WSURL:   normalizeRealtimeWSURL(c.cfg.WSURL),
+		Token:   token,
+		APIKey:  apiKey,
+	}
+}
+
+func (c *Client) realtimeAuth() (token string, apiKey string) {
+	if c.cfg.AccessToken != "" {
+		return c.cfg.AccessToken, ""
+	}
+	return "", c.cfg.APIKey
+}
+
+func normalizeRealtimeWSURL(rawURL string) string {
+	trimmed := strings.TrimSuffix(rawURL, "/")
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Path == "" || parsed.Path == "/" {
+		return trimmed + DefaultAPIBasePath + "/ws"
+	}
+	if parsed.Path == DefaultAPIBasePath {
+		return trimmed + "/ws"
+	}
+	return trimmed
+}
 
 // NewSpooledWorker creates a new Spooled worker for processing jobs.
 //

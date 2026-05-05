@@ -10,7 +10,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](ht
 
 ### Prerequisites
 
-- Go 1.22 or later
+- Go 1.25 or later
 - Make (optional, for running scripts)
 - Protocol Buffers compiler (for gRPC changes)
 

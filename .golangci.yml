@@ -1,79 +1,80 @@
-# golangci-lint configuration
-# https://golangci-lint.run/usage/configuration/
-
+version: "2"
 run:
   timeout: 5m
   modules-download-mode: readonly
-
 linters:
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - gofmt
-    - goimports
-    - misspell
-    - unconvert
     - bodyclose
+    - misspell
     - noctx
     - prealloc
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-  gofmt:
-    simplify: true
-  goimports:
-    local-prefixes: github.com/spooled-cloud/spooled-sdk-go
-  misspell:
-    locale: US
-
-issues:
-  exclude-rules:
-    # Exclude test files from some checks
-    - path: _test\.go
-      linters:
-        - errcheck
-        - bodyclose
-    # Exclude scripts and test utilities
-    - path: scripts/
-      linters:
-        - errcheck
-        - noctx
-    - path: internal/testutil/
-      linters:
-        - errcheck
-    # Exclude generated files
-    - path: pb/
-      linters:
-        - all
-    - path: types\.gen\.go
-      linters:
-        - all
-    # Allow fmt.Print in examples
-    - path: examples/
-      linters:
-        - forbidigo
-    # Allow "cancelled" spelling (British English, common in APIs)
-    - linters:
-        - misspell
-      text: "cancelled|Cancelled"
-    # Allow "marshalling" spelling (British English)
-    - linters:
-        - misspell
-      text: "marshalling"
-    # Exclude worker type assertions (safe patterns)
-    - path: spooled/worker/
-      linters:
-        - errcheck
-    # Exclude deprecated library warnings (will migrate later)
-    - linters:
-        - staticcheck
-      text: "SA1019"
-    # Exclude bodyclose for websocket (managed by library)
-    - path: spooled/realtime/
-      linters:
-        - bodyclose
+    - unconvert
+  settings:
+    errcheck:
+      check-type-assertions: true
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - bodyclose
+          - errcheck
+        path: _test\.go
+      - linters:
+          - errcheck
+          - noctx
+        path: scripts/
+      - linters:
+          - errcheck
+        path: internal/testutil/
+      - linters:
+          - all
+        path: pb/
+      - linters:
+          - all
+        path: types\.gen\.go
+      - linters:
+          - errcheck
+          - forbidigo
+        path: examples/
+      - linters:
+          - misspell
+        text: cancelled|Cancelled|Cancelling|cancelling
+      - linters:
+          - misspell
+        text: marshalling
+      - linters:
+          - errcheck
+        path: spooled/worker/
+      - linters:
+          - staticcheck
+        text: SA1019
+      - linters:
+          - bodyclose
+        path: spooled/realtime/
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/spooled-cloud/spooled-sdk-go
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

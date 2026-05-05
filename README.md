@@ -28,7 +28,7 @@ Official Go SDK for [Spooled Cloud](https://spooled.cloud) — a modern, scalabl
 go get github.com/spooled-cloud/spooled-sdk-go
 ```
 
-**Requirements:** Go 1.22 or later
+**Requirements:** Go 1.25 or later
 
 ## Quick Start
 

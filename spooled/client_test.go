@@ -2,6 +2,8 @@ package spooled
 
 import (
 	"testing"
+
+	"github.com/spooled-cloud/spooled-sdk-go/spooled/realtime"
 )
 
 func TestNewClient_WithAPIKey(t *testing.T) {
@@ -106,6 +108,117 @@ func TestNewClient_WSURLDerived(t *testing.T) {
 	cfg := client.GetConfig()
 	if cfg.WSURL != "wss://custom.example.com" {
 		t.Errorf("WSURL = %q, want %q", cfg.WSURL, "wss://custom.example.com")
+	}
+}
+
+func TestClientRealtimeReturnsWebSocketClient(t *testing.T) {
+	client, err := NewClient(
+		WithAPIKey("sp_test_123456789012345678901234567890"),
+	)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	defer client.Close()
+
+	rt := client.Realtime()
+	if rt == nil {
+		t.Fatal("Realtime client should not be nil")
+	}
+	if _, ok := rt.(*realtime.WebSocketClient); !ok {
+		t.Fatalf("Realtime() = %T, want *realtime.WebSocketClient", rt)
+	}
+}
+
+func TestClientRealtimeSSEReturnsSSEClient(t *testing.T) {
+	client, err := NewClient(
+		WithAPIKey("sp_test_123456789012345678901234567890"),
+	)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	defer client.Close()
+
+	if client.RealtimeSSE() == nil {
+		t.Fatal("RealtimeSSE client should not be nil")
+	}
+}
+
+func TestClientRealtimeOptionsPreferAccessToken(t *testing.T) {
+	client, err := NewClient(
+		WithAPIKey("sp_test_123456789012345678901234567890"),
+		WithAccessToken("jwt-access-token"),
+	)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	defer client.Close()
+
+	opts := client.realtimeConnectionOptions()
+	if opts.Token != "jwt-access-token" {
+		t.Errorf("Token = %q, want access token", opts.Token)
+	}
+	if opts.APIKey != "" {
+		t.Errorf("APIKey = %q, want empty when access token is present", opts.APIKey)
+	}
+}
+
+func TestClientRealtimeOptionsUseAPIKeyWhenNoAccessToken(t *testing.T) {
+	client, err := NewClient(
+		WithAPIKey("sp_test_123456789012345678901234567890"),
+	)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	defer client.Close()
+
+	opts := client.realtimeConnectionOptions()
+	if opts.Token != "" {
+		t.Errorf("Token = %q, want empty", opts.Token)
+	}
+	if opts.APIKey != "sp_test_123456789012345678901234567890" {
+		t.Errorf("APIKey = %q, want configured API key", opts.APIKey)
+	}
+}
+
+func TestNormalizeRealtimeWSURL(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "host base",
+			in:   "wss://api.spooled.cloud",
+			want: "wss://api.spooled.cloud/api/v1/ws",
+		},
+		{
+			name: "host base trailing slash",
+			in:   "wss://api.spooled.cloud/",
+			want: "wss://api.spooled.cloud/api/v1/ws",
+		},
+		{
+			name: "api base path",
+			in:   "wss://api.spooled.cloud/api/v1",
+			want: "wss://api.spooled.cloud/api/v1/ws",
+		},
+		{
+			name: "explicit realtime endpoint",
+			in:   "wss://api.spooled.cloud/api/v1/ws",
+			want: "wss://api.spooled.cloud/api/v1/ws",
+		},
+		{
+			name: "custom explicit endpoint",
+			in:   "wss://stream.example.com/realtime",
+			want: "wss://stream.example.com/realtime",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeRealtimeWSURL(tt.in); got != tt.want {
+				t.Errorf("normalizeRealtimeWSURL(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 
