@@ -8,10 +8,10 @@ go 1.25.0
 retract v1.0.10
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/oapi-codegen/runtime v1.4.0
 	google.golang.org/grpc v1.81.0
 	google.golang.org/protobuf v1.36.11
-	nhooyr.io/websocket v1.8.17
 )
 
 require (

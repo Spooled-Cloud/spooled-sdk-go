@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"nhooyr.io/websocket"
+	"github.com/coder/websocket"
 )
 
 // WebSocketClient implements RealtimeClient using WebSocket.
