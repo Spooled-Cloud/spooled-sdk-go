@@ -81,7 +81,7 @@ func (f LoggerFunc) Debug(msg string, keysAndValues ...any) {
 
 // Config holds the SDK configuration.
 type Config struct {
-	// APIKey is the API key for authentication (production keys start with sk_live_, sk_test_).
+	// APIKey is the API key for authentication (keys start with sp_live_ or sp_test_).
 	APIKey string
 	// AccessToken is a JWT access token (alternative to API key).
 	AccessToken string
