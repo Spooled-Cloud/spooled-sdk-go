@@ -5,6 +5,19 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.12] - 2026-07-07
+
+### Changed
+
+- Migrated the WebSocket dependency from the deprecated `nhooyr.io/websocket`
+  to the maintained `coder/websocket` fork.
+- The default worker version now reports the SDK release (`1.0.12`) instead of
+  a hardcoded `1.0.0`.
+
+### Fixed
+
+- Corrected the API key prefix in the config comment (`sp_`, not `sk_`).
+
 ## [1.0.0] - 2025-01-18
 
 ### Added

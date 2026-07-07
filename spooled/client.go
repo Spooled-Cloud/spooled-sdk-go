@@ -73,7 +73,7 @@ func (w *SpooledWorker) Start() error {
 		opts.WorkerType = "go"
 	}
 	if opts.Version == "" {
-		opts.Version = "1.0.0"
+		opts.Version = "1.0.12"
 	}
 	if opts.Metadata == nil {
 		opts.Metadata = make(map[string]string)
