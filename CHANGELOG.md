@@ -5,6 +5,26 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.13] - 2026-07-08
+
+### Fixed
+
+- **Realtime WebSocket authentication.** The client sent auth in an
+  `Authorization`/`X-API-Key` header the `/ws` endpoint ignores, so realtime never
+  connected. It now exchanges an API key for a JWT via `POST /api/v1/auth/login`
+  and dials `?token=<jwt>`.
+- **SSE** authenticates with the `?api_key=` query param (the backend does not read
+  `X-API-Key`).
+- **Worker heartbeat** sends a valid status (`healthy`/`draining`/`offline`) instead
+  of the rejected `active`/`stopping`.
+- **Data race** on the access token: reads/writes are now guarded by a mutex.
+- **Circuit breaker** no longer counts non-retryable 4xx as failures and records one
+  outcome per call instead of one per retry attempt; half-open probes are bounded.
+- **429** handling honors the `Retry-After` header.
+- **`WithRetry`** no longer resets the other retry fields when only `MaxRetries` is set.
+- **Reconnect** backoff can no longer integer-overflow to zero, and a scheduled
+  reconnect no longer fires after `Disconnect()`.
+
 ## [1.0.12] - 2026-07-07
 
 ### Changed

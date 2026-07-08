@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/version"
@@ -17,9 +19,12 @@ import (
 
 // Transport wraps an http.Client with retry, circuit breaker, and auth handling.
 type Transport struct {
-	client           *http.Client
-	baseURL          string
-	apiKey           string
+	client  *http.Client
+	baseURL string
+	apiKey  string
+	// tokenMu guards accessToken, which is mutated by token refresh and read
+	// concurrently by every request goroutine sharing this Transport.
+	tokenMu          sync.RWMutex
 	accessToken      string
 	adminKey         string
 	userAgent        string
@@ -115,15 +120,12 @@ func NewTransport(cfg Config) *Transport {
 		autoRefreshToken: cfg.AutoRefreshToken,
 	}
 
-	// Initialize retry policy - use defaults if not specified
-	// We check if BaseDelay is 0 to detect if any retry config was provided
-	// (MaxRetries=0 is a valid config meaning no retries)
-	retryConfig := cfg.Retry
-	if retryConfig.BaseDelay == 0 && retryConfig.MaxDelay == 0 && retryConfig.Factor == 0 {
-		// No retry config provided, use defaults
-		retryConfig = DefaultRetryConfig()
-	}
-	t.retry = NewRetryPolicy(retryConfig)
+	// Initialize retry policy. NewRetryPolicy defaults the delay fields
+	// (BaseDelay, MaxDelay, Factor) individually, so we must NOT replace the
+	// whole struct here: doing so would clobber a caller-provided MaxRetries
+	// (e.g. WithRetry(RetryConfig{MaxRetries: 5})) back to the default. The
+	// caller-provided MaxRetries is always preserved, including 0 (no retries).
+	t.retry = NewRetryPolicy(cfg.Retry)
 
 	// Initialize circuit breaker
 	if cfg.CircuitBreaker.Enabled {
@@ -146,10 +148,24 @@ func NewTransport(cfg Config) *Transport {
 
 // SetAccessToken updates the access token (used for token refresh).
 func (t *Transport) SetAccessToken(token string) {
-	t.accessToken = token
+	t.setAccessToken(token)
 	if t.tokenRefresher != nil {
 		t.tokenRefresher.SetAccessToken(token, 0)
 	}
+}
+
+// getAccessToken returns the current access token under a read lock.
+func (t *Transport) getAccessToken() string {
+	t.tokenMu.RLock()
+	defer t.tokenMu.RUnlock()
+	return t.accessToken
+}
+
+// setAccessToken stores the access token under a write lock.
+func (t *Transport) setAccessToken(token string) {
+	t.tokenMu.Lock()
+	t.accessToken = token
+	t.tokenMu.Unlock()
 }
 
 // SetRefreshToken updates the refresh token.
@@ -193,7 +209,7 @@ func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 		if err := t.tokenRefresher.RefreshIfNeeded(ctx); err != nil {
 			t.log("proactive token refresh failed", "error", err)
 		} else if token := t.tokenRefresher.GetAccessToken(); token != "" {
-			t.accessToken = token
+			t.setAccessToken(token)
 		}
 	}
 
@@ -201,15 +217,21 @@ func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 	maxAttempts := t.retry.MaxRetries + 1
 	tokenRefreshAttempted := false
 
+retryLoop:
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
-			// Wait before retry
-			delay := t.retry.Delay(attempt - 1)
+			// Wait before retry.
+			delay := t.nextRetryDelay(attempt, lastErr)
 			t.log("retrying request", "attempt", attempt, "delay", delay, "path", req.Path)
 
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				// Client-side cancellation. Break out so the breaker outcome is
+				// still recorded once below (releasing any half-open probe);
+				// ctx.Err() is non-retryable, so it is treated as a benign,
+				// non-failure outcome rather than tripping the breaker.
+				lastErr = ctx.Err()
+				break retryLoop
 			case <-time.After(delay):
 			}
 		}
@@ -232,7 +254,7 @@ func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 			// Use ForceRefresh since we got a 401 (token is definitely invalid)
 			if refreshErr := t.tokenRefresher.ForceRefresh(ctx); refreshErr == nil {
 				if token := t.tokenRefresher.GetAccessToken(); token != "" {
-					t.accessToken = token
+					t.setAccessToken(token)
 					// Retry immediately without counting as a retry attempt
 					attempt--
 					continue
@@ -242,14 +264,24 @@ func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 			}
 		}
 
-		// Record failure for circuit breaker
-		if t.circuitBreaker != nil {
-			t.circuitBreaker.RecordFailure()
-		}
-
 		// Check if we should retry
 		if !t.shouldRetry(req, err, attempt) {
-			break
+			break retryLoop
+		}
+	}
+
+	// Record the outcome for the circuit breaker exactly once per Do() call,
+	// based on the final error class (not per retry attempt):
+	//   - retryable errors (5xx, 429, network, timeout) indicate backend or
+	//     transport trouble and count as a breaker failure;
+	//   - non-retryable errors are client/validation errors (4xx) where the
+	//     backend responded correctly, so they are treated as healthy and do
+	//     NOT trip the breaker.
+	if t.circuitBreaker != nil {
+		if IsRetryable(lastErr) {
+			t.circuitBreaker.RecordFailure()
+		} else {
+			t.circuitBreaker.RecordSuccess()
 		}
 	}
 
@@ -297,11 +329,13 @@ func (t *Transport) doOnce(ctx context.Context, req *Request) (*Response, error)
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 
-	// Set auth header
+	// Set auth header. Read the access token once under the lock; it may be
+	// mutated concurrently by token refresh in other goroutines.
+	accessToken := t.getAccessToken()
 	if req.UseAdminKey && t.adminKey != "" {
 		httpReq.Header.Set("X-Admin-Key", t.adminKey)
-	} else if t.accessToken != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+t.accessToken)
+	} else if accessToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+accessToken)
 	} else if t.apiKey != "" {
 		// API keys are sent via Bearer token, not X-API-Key header
 		httpReq.Header.Set("Authorization", "Bearer "+t.apiKey)
@@ -350,6 +384,26 @@ func (t *Transport) doOnce(ctx context.Context, req *Request) (*Response, error)
 	}
 
 	return resp, nil
+}
+
+// nextRetryDelay computes the wait before the given retry attempt (1-based).
+// It uses exponential backoff, but honors a server-provided Retry-After on 429
+// responses: the wait is never shorter than the server asked for, never
+// shorter than the exponential backoff, and never longer than the configured
+// MaxDelay.
+func (t *Transport) nextRetryDelay(attempt int, lastErr error) time.Duration {
+	delay := t.retry.Delay(attempt - 1)
+
+	var rateLimitErr *RateLimitError
+	if errors.As(lastErr, &rateLimitErr) && rateLimitErr.RetryAfter > 0 {
+		if rateLimitErr.RetryAfter > delay {
+			delay = rateLimitErr.RetryAfter
+		}
+		if delay > t.retry.MaxDelay {
+			delay = t.retry.MaxDelay
+		}
+	}
+	return delay
 }
 
 // shouldRetry determines if a request should be retried.

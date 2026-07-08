@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 
@@ -17,6 +16,7 @@ type WebSocketClient struct {
 	conn              *websocket.Conn
 	state             ConnectionState
 	reconnectAttempts int
+	reconnectTimer    *time.Timer
 	subscriptions     map[string]SubscriptionFilter
 	pendingCommands   map[string]chan error
 
@@ -40,6 +40,9 @@ func NewWebSocketClient(opts ConnectionOptions) *WebSocketClient {
 	defaults := DefaultConnectionOptions()
 	if opts.WSURL == "" {
 		opts.WSURL = defaults.WSURL
+	}
+	if opts.BaseURL == "" {
+		opts.BaseURL = defaults.BaseURL
 	}
 	if opts.ReconnectDelay == 0 {
 		opts.ReconnectDelay = defaults.ReconnectDelay
@@ -76,22 +79,37 @@ func (c *WebSocketClient) Connect() error {
 }
 
 func (c *WebSocketClient) doConnect() error {
-	c.log("Connecting to WebSocket: %s", c.opts.WSURL)
+	c.mu.RLock()
+	wsURL := c.opts.WSURL
+	c.mu.RUnlock()
 
-	// Build headers for authentication
-	headers := http.Header{}
-	if c.opts.Token != "" {
-		headers.Set("Authorization", "Bearer "+c.opts.Token)
-	} else if c.opts.APIKey != "" {
-		headers.Set("X-API-Key", c.opts.APIKey)
-	}
+	// Log the base URL without the token to avoid leaking credentials.
+	c.log("Connecting to WebSocket: %s", wsURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx, c.opts.WSURL, &websocket.DialOptions{
-		HTTPHeader: headers,
-	})
+	// The /ws endpoint authenticates ONLY via a JWT in the ?token= query
+	// parameter. It does not read the Authorization header for the upgrade and
+	// never reads X-API-Key. An API-key client must first exchange its key for
+	// a JWT via POST /api/v1/auth/login.
+	token, err := c.resolveToken(ctx)
+	if err != nil {
+		c.mu.Lock()
+		c.setState(StateDisconnected)
+		c.mu.Unlock()
+		return fmt.Errorf("websocket authentication failed: %w", err)
+	}
+
+	dialURL, err := appendQueryParam(wsURL, "token", token)
+	if err != nil {
+		c.mu.Lock()
+		c.setState(StateDisconnected)
+		c.mu.Unlock()
+		return fmt.Errorf("invalid websocket url: %w", err)
+	}
+
+	conn, _, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
 		c.mu.Lock()
 		c.setState(StateDisconnected)
@@ -127,6 +145,25 @@ func (c *WebSocketClient) doConnect() error {
 	return nil
 }
 
+// resolveToken returns the JWT to place in the ?token= query parameter of the
+// WebSocket URL. If a JWT was configured directly it is used as-is; otherwise
+// the configured API key is exchanged for a fresh JWT via the login endpoint.
+func (c *WebSocketClient) resolveToken(ctx context.Context) (string, error) {
+	c.mu.RLock()
+	token := c.opts.Token
+	apiKey := c.opts.APIKey
+	baseURL := c.opts.BaseURL
+	c.mu.RUnlock()
+
+	if token != "" {
+		return token, nil
+	}
+	if apiKey == "" {
+		return "", fmt.Errorf("no authentication configured: set an access token or API key")
+	}
+	return realtimeLogin(ctx, baseURL, apiKey)
+}
+
 // Disconnect closes the WebSocket connection.
 func (c *WebSocketClient) Disconnect() error {
 	c.mu.Lock()
@@ -134,6 +171,13 @@ func (c *WebSocketClient) Disconnect() error {
 
 	if c.state == StateDisconnected {
 		return nil
+	}
+
+	// Stop any pending reconnect so a scheduled AfterFunc cannot resurrect a
+	// connection the user explicitly closed.
+	if c.reconnectTimer != nil {
+		c.reconnectTimer.Stop()
+		c.reconnectTimer = nil
 	}
 
 	if c.cancel != nil {
@@ -472,23 +516,38 @@ func (c *WebSocketClient) handleDisconnect() {
 		return
 	}
 
+	attempt := c.reconnectAttempts
 	c.setState(StateReconnecting)
 	c.mu.Unlock()
 
-	// Calculate backoff delay
-	delay := c.opts.ReconnectDelay * time.Duration(1<<(c.reconnectAttempts-1))
-	if delay > c.opts.MaxReconnectDelay {
-		delay = c.opts.MaxReconnectDelay
-	}
+	// Calculate backoff delay (clamped so it can never overflow to zero).
+	delay := reconnectBackoff(c.opts.ReconnectDelay, c.opts.MaxReconnectDelay, attempt)
 
-	c.log("Reconnecting in %v (attempt %d)", delay, c.reconnectAttempts)
+	c.log("Reconnecting in %v (attempt %d)", delay, attempt)
 
-	time.AfterFunc(delay, func() {
+	timer := time.AfterFunc(delay, func() {
+		// Bail out if the user disconnected while the timer was pending.
+		c.mu.RLock()
+		state := c.state
+		c.mu.RUnlock()
+		if state == StateDisconnected {
+			return
+		}
 		if err := c.doConnect(); err != nil {
 			c.log("Reconnect failed: %v", err)
 			c.handleDisconnect()
 		}
 	})
+
+	// Store the timer so Disconnect() can cancel a pending reconnect.
+	c.mu.Lock()
+	if c.state == StateDisconnected {
+		// A Disconnect() raced in between; cancel immediately.
+		timer.Stop()
+	} else {
+		c.reconnectTimer = timer
+	}
+	c.mu.Unlock()
 }
 
 func (c *WebSocketClient) setState(state ConnectionState) {

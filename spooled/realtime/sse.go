@@ -19,6 +19,7 @@ type SSEClient struct {
 	resp              *http.Response
 	state             ConnectionState
 	reconnectAttempts int
+	reconnectTimer    *time.Timer
 	filter            *SubscriptionFilter
 	httpClient        *http.Client
 
@@ -98,10 +99,12 @@ func (c *SSEClient) doConnect() error {
 		return fmt.Errorf("failed to create SSE request: %w", err)
 	}
 
+	// The SSE data plane authenticates via a Bearer token (raw API key or JWT)
+	// or the ?api_key= query parameter added in buildSSEURL. It does NOT read
+	// X-API-Key. When a JWT/token is configured we send it as a Bearer token;
+	// a bare API key is carried in the query string instead.
 	if c.opts.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.opts.Token)
-	} else if c.opts.APIKey != "" {
-		req.Header.Set("X-API-Key", c.opts.APIKey)
 	}
 
 	req.Header.Set("Accept", "text/event-stream")
@@ -144,6 +147,13 @@ func (c *SSEClient) Disconnect() error {
 
 	if c.state == StateDisconnected {
 		return nil
+	}
+
+	// Stop any pending reconnect so a scheduled AfterFunc cannot resurrect a
+	// connection the user explicitly closed.
+	if c.reconnectTimer != nil {
+		c.reconnectTimer.Stop()
+		c.reconnectTimer = nil
 	}
 
 	if c.cancel != nil {
@@ -381,23 +391,38 @@ func (c *SSEClient) handleDisconnect() {
 		return
 	}
 
+	attempt := c.reconnectAttempts
 	c.setState(StateReconnecting)
 	c.mu.Unlock()
 
-	// Calculate backoff delay
-	delay := c.opts.ReconnectDelay * time.Duration(1<<(c.reconnectAttempts-1))
-	if delay > c.opts.MaxReconnectDelay {
-		delay = c.opts.MaxReconnectDelay
-	}
+	// Calculate backoff delay (clamped so it can never overflow to zero).
+	delay := reconnectBackoff(c.opts.ReconnectDelay, c.opts.MaxReconnectDelay, attempt)
 
-	c.log("Reconnecting in %v (attempt %d)", delay, c.reconnectAttempts)
+	c.log("Reconnecting in %v (attempt %d)", delay, attempt)
 
-	time.AfterFunc(delay, func() {
+	timer := time.AfterFunc(delay, func() {
+		// Bail out if the user disconnected while the timer was pending.
+		c.mu.RLock()
+		state := c.state
+		c.mu.RUnlock()
+		if state == StateDisconnected {
+			return
+		}
 		if err := c.doConnect(); err != nil {
 			c.log("Reconnect failed: %v", err)
 			c.handleDisconnect()
 		}
 	})
+
+	// Store the timer so Disconnect() can cancel a pending reconnect.
+	c.mu.Lock()
+	if c.state == StateDisconnected {
+		// A Disconnect() raced in between; cancel immediately.
+		timer.Stop()
+	} else {
+		c.reconnectTimer = timer
+	}
+	c.mu.Unlock()
 }
 
 func (c *SSEClient) buildSSEURL() string {
@@ -406,25 +431,33 @@ func (c *SSEClient) buildSSEURL() string {
 
 	c.mu.RLock()
 	filter := c.filter
+	token := c.opts.Token
+	apiKey := c.opts.APIKey
 	c.mu.RUnlock()
 
-	if filter == nil {
-		return sseURL
+	params := url.Values{}
+
+	// The data plane does not read X-API-Key; SSE authenticates via the
+	// api_key query parameter (or an Authorization Bearer token). Only send the
+	// key in the query when we are not already using a bearer token.
+	if token == "" && apiKey != "" {
+		params.Set("api_key", apiKey)
 	}
 
 	// Build query parameters from filter
-	params := url.Values{}
-	if filter.QueueName != "" {
-		params.Set("queue", filter.QueueName)
-	}
-	if filter.JobID != "" {
-		params.Set("job_id", filter.JobID)
-	}
-	if filter.WorkerID != "" {
-		params.Set("worker_id", filter.WorkerID)
-	}
-	if len(filter.Events) > 0 {
-		params.Set("events", strings.Join(filter.Events, ","))
+	if filter != nil {
+		if filter.QueueName != "" {
+			params.Set("queue", filter.QueueName)
+		}
+		if filter.JobID != "" {
+			params.Set("job_id", filter.JobID)
+		}
+		if filter.WorkerID != "" {
+			params.Set("worker_id", filter.WorkerID)
+		}
+		if len(filter.Events) > 0 {
+			params.Set("events", strings.Join(filter.Events, ","))
+		}
 	}
 
 	if len(params) > 0 {

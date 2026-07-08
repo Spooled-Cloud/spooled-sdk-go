@@ -163,6 +163,38 @@ func TestCircuitBreaker_HalfOpenReopensOnFailure(t *testing.T) {
 	}
 }
 
+func TestCircuitBreaker_HalfOpenLimitsConcurrentProbes(t *testing.T) {
+	cb := NewCircuitBreaker(CircuitBreakerConfig{
+		FailureThreshold: 1,
+		SuccessThreshold: 2,
+		Timeout:          10 * time.Millisecond,
+	})
+
+	// Open the circuit and wait for the half-open window.
+	cb.RecordFailure()
+	time.Sleep(20 * time.Millisecond)
+
+	// The first Allow() transitions to half-open and admits probe #1.
+	if !cb.Allow() {
+		t.Fatal("expected first Allow() to admit a probe in half-open")
+	}
+	// Second probe is still within the successThreshold cap.
+	if !cb.Allow() {
+		t.Fatal("expected second Allow() to be admitted (within cap)")
+	}
+	// Third concurrent probe must be blocked - the cap prevents a burst from
+	// hammering a still-unhealthy backend.
+	if cb.Allow() {
+		t.Error("expected third concurrent probe to be blocked while half-open")
+	}
+
+	// Concluding a probe frees a slot so another may proceed.
+	cb.RecordSuccess()
+	if !cb.Allow() {
+		t.Error("expected a probe slot to free up after a probe concludes")
+	}
+}
+
 func TestCircuitBreaker_Reset(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerConfig{
 		FailureThreshold: 1,

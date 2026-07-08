@@ -541,9 +541,17 @@ func (w *Worker) sendWorkerHeartbeat() {
 		return
 	}
 
-	status := "active"
-	if w.state.Load().(State) != StateRunning {
-		status = "stopping"
+	// Map the worker's internal state to the backend heartbeat status enum,
+	// which only accepts healthy/degraded/draining/offline. Sending "active"
+	// or "stopping" is rejected with a 400 VALIDATION_ERROR.
+	var status string
+	switch w.state.Load().(State) {
+	case StateRunning:
+		status = string(resources.WorkerStatusHealthy)
+	case StateStopping:
+		status = string(resources.WorkerStatusDraining)
+	default:
+		status = string(resources.WorkerStatusOffline)
 	}
 
 	currentJobs := int(w.jobCount.Load())

@@ -482,6 +482,137 @@ func TestTransport_SetAccessToken(t *testing.T) {
 	}
 }
 
+func TestTransport_CircuitBreaker_IgnoresClientErrors(t *testing.T) {
+	var requestCount int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requestCount, 1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	transport := NewTransport(Config{
+		BaseURL: server.URL,
+		APIKey:  "sp_test_123456789012345678901234567890",
+		Retry: RetryConfig{
+			MaxRetries: 0,
+			BaseDelay:  1 * time.Millisecond,
+			Jitter:     false,
+		},
+		CircuitBreaker: CircuitBreakerConfig{
+			Enabled:          true,
+			FailureThreshold: 2,
+			SuccessThreshold: 1,
+			Timeout:          100 * time.Millisecond,
+		},
+	})
+
+	// Non-retryable 4xx client errors must NOT trip the circuit breaker, no
+	// matter how many are made.
+	for i := 0; i < 5; i++ {
+		_, err := transport.Do(context.Background(), &Request{Method: http.MethodGet, Path: "/missing"})
+		if !IsNotFoundError(err) {
+			t.Fatalf("request %d: expected NotFoundError, got %v", i, err)
+		}
+	}
+
+	if requestCount != 5 {
+		t.Errorf("expected all 5 requests to reach the server (circuit stays closed), got %d", requestCount)
+	}
+	if state := transport.circuitBreaker.State(); state != CircuitClosed {
+		t.Errorf("expected circuit to remain Closed after 4xx errors, got %v", state)
+	}
+}
+
+func TestTransport_CircuitBreaker_RecordsOncePerDo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	transport := NewTransport(Config{
+		BaseURL: server.URL,
+		APIKey:  "sp_test_123456789012345678901234567890",
+		Retry: RetryConfig{
+			MaxRetries: 3, // A single Do() will retry several times.
+			BaseDelay:  1 * time.Millisecond,
+			Jitter:     false,
+		},
+		CircuitBreaker: CircuitBreakerConfig{
+			Enabled:          true,
+			FailureThreshold: 2,
+			SuccessThreshold: 1,
+			Timeout:          time.Second,
+		},
+	})
+
+	// One Do() retries the 500 up to MaxRetries times but must record only ONE
+	// circuit-breaker failure, so the circuit stays closed after a single call.
+	transport.Do(context.Background(), &Request{Method: http.MethodGet, Path: "/test"})
+	if got := transport.circuitBreaker.Metrics().FailureCount; got != 1 {
+		t.Errorf("expected exactly 1 recorded failure per Do(), got %d", got)
+	}
+	if state := transport.circuitBreaker.State(); state != CircuitClosed {
+		t.Errorf("expected circuit still Closed after one Do(), got %v", state)
+	}
+
+	// A second failing Do() reaches the threshold and opens the circuit.
+	transport.Do(context.Background(), &Request{Method: http.MethodGet, Path: "/test"})
+	if state := transport.circuitBreaker.State(); state != CircuitOpen {
+		t.Errorf("expected circuit Open after 2 failing Do() calls, got %v", state)
+	}
+}
+
+func TestTransport_NextRetryDelay_HonorsRetryAfter(t *testing.T) {
+	transport := NewTransport(Config{
+		BaseURL: "http://example.invalid",
+		APIKey:  "sp_test_123456789012345678901234567890",
+		Retry: RetryConfig{
+			MaxRetries: 3,
+			BaseDelay:  1 * time.Millisecond,
+			MaxDelay:   10 * time.Second,
+			Factor:     2,
+			Jitter:     false,
+		},
+	})
+
+	// Retry-After longer than the exponential backoff wins.
+	rle := &RateLimitError{APIError: &APIError{StatusCode: 429}, RetryAfter: 2 * time.Second}
+	if got := transport.nextRetryDelay(1, rle); got != 2*time.Second {
+		t.Errorf("expected Retry-After (2s) to be honored, got %v", got)
+	}
+
+	// Retry-After is capped at MaxDelay.
+	big := &RateLimitError{APIError: &APIError{StatusCode: 429}, RetryAfter: time.Hour}
+	if got := transport.nextRetryDelay(1, big); got != 10*time.Second {
+		t.Errorf("expected Retry-After capped at MaxDelay (10s), got %v", got)
+	}
+
+	// Non-rate-limit errors fall back to the exponential backoff (BaseDelay at
+	// the first retry, with jitter disabled).
+	if got := transport.nextRetryDelay(1, NewNetworkError(context.Canceled)); got != 1*time.Millisecond {
+		t.Errorf("expected exponential backoff (1ms) for non-429 error, got %v", got)
+	}
+}
+
+func TestNewTransport_PreservesMaxRetries(t *testing.T) {
+	// Only MaxRetries is set (delay fields left at zero). The delay fields must
+	// be defaulted individually, but the caller-provided MaxRetries must be
+	// preserved rather than reset to the default of 3.
+	transport := NewTransport(Config{
+		BaseURL: "http://example.invalid",
+		APIKey:  "sp_test_123456789012345678901234567890",
+		Retry:   RetryConfig{MaxRetries: 5},
+	})
+
+	if transport.retry.MaxRetries != 5 {
+		t.Errorf("expected MaxRetries preserved as 5, got %d", transport.retry.MaxRetries)
+	}
+	if transport.retry.BaseDelay == 0 || transport.retry.MaxDelay == 0 || transport.retry.Factor == 0 {
+		t.Errorf("expected delay fields defaulted individually, got base=%v max=%v factor=%v",
+			transport.retry.BaseDelay, transport.retry.MaxDelay, transport.retry.Factor)
+	}
+}
+
 func TestJSON(t *testing.T) {
 	resp := &Response{
 		StatusCode: 200,

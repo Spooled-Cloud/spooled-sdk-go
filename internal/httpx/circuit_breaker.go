@@ -37,6 +37,7 @@ type CircuitBreaker struct {
 	state            CircuitState
 	failureCount     int
 	successCount     int
+	halfOpenInFlight int
 	failureThreshold int
 	successThreshold int
 	timeout          time.Duration
@@ -76,11 +77,20 @@ func (cb *CircuitBreaker) Allow() bool {
 		// Check if timeout has passed
 		if time.Since(cb.lastStateChange) >= cb.timeout {
 			cb.transitionTo(CircuitHalfOpen)
+			// Admit this caller as the first probe.
+			cb.halfOpenInFlight++
 			return true
 		}
 		return false
 	case CircuitHalfOpen:
-		// Allow one test request
+		// Cap the number of concurrent probe requests so a burst of callers
+		// cannot all hammer a still-unhealthy backend while half-open. We admit
+		// at most successThreshold probes in flight (enough to close the
+		// circuit) and block the rest, which fail fast as circuit-open.
+		if cb.halfOpenInFlight >= cb.successThreshold {
+			return false
+		}
+		cb.halfOpenInFlight++
 		return true
 	default:
 		return true
@@ -97,6 +107,9 @@ func (cb *CircuitBreaker) RecordSuccess() {
 		// Reset failure count on success
 		cb.failureCount = 0
 	case CircuitHalfOpen:
+		if cb.halfOpenInFlight > 0 {
+			cb.halfOpenInFlight--
+		}
 		cb.successCount++
 		if cb.successCount >= cb.successThreshold {
 			cb.transitionTo(CircuitClosed)
@@ -116,6 +129,9 @@ func (cb *CircuitBreaker) RecordFailure() {
 			cb.transitionTo(CircuitOpen)
 		}
 	case CircuitHalfOpen:
+		if cb.halfOpenInFlight > 0 {
+			cb.halfOpenInFlight--
+		}
 		// Any failure in half-open state reopens the circuit
 		cb.transitionTo(CircuitOpen)
 	}
@@ -133,6 +149,7 @@ func (cb *CircuitBreaker) transitionTo(state CircuitState) {
 	cb.state = state
 	cb.failureCount = 0
 	cb.successCount = 0
+	cb.halfOpenInFlight = 0
 	cb.lastStateChange = time.Now()
 }
 
