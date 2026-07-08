@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
@@ -19,6 +20,10 @@ type WebSocketClient struct {
 	reconnectTimer    *time.Timer
 	subscriptions     map[string]SubscriptionFilter
 	pendingCommands   map[string]chan error
+
+	// tokens caches the JWT exchanged from an API key so reconnects reuse it
+	// instead of logging in every time. Unused when a static token is set.
+	tokens tokenCache
 
 	// Event handlers
 	eventHandlers       map[EventType][]JobEventHandler
@@ -109,8 +114,15 @@ func (c *WebSocketClient) doConnect() error {
 		return fmt.Errorf("invalid websocket url: %w", err)
 	}
 
-	conn, _, err := websocket.Dial(ctx, dialURL, nil)
+	conn, resp, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
+		// If the server rejected our JWT during the upgrade, drop it from the
+		// cache so the next attempt re-logs in rather than reusing a token the
+		// server will not accept. Other failures leave the cache intact so a
+		// transient outage does not trigger a fresh login on every retry.
+		if resp != nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {
+			c.tokens.invalidate()
+		}
 		c.mu.Lock()
 		c.setState(StateDisconnected)
 		c.mu.Unlock()
@@ -155,13 +167,22 @@ func (c *WebSocketClient) resolveToken(ctx context.Context) (string, error) {
 	baseURL := c.opts.BaseURL
 	c.mu.RUnlock()
 
+	// A statically configured access token is used verbatim; we never log in
+	// or cache in that case.
 	if token != "" {
 		return token, nil
 	}
 	if apiKey == "" {
 		return "", fmt.Errorf("no authentication configured: set an access token or API key")
 	}
-	return realtimeLogin(ctx, baseURL, apiKey)
+
+	// Reuse a cached JWT across reconnects; only hit the (rate-limited) login
+	// endpoint when the cache is empty, the token is at/near expiry, or the
+	// server previously rejected it. The cache lock is held across the login so
+	// a reconnect storm coalesces into a single request instead of a 429 flood.
+	return c.tokens.getOrLogin(time.Now(), func() (string, error) {
+		return realtimeLogin(ctx, baseURL, apiKey)
+	})
 }
 
 // Disconnect closes the WebSocket connection.

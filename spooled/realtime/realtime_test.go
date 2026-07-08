@@ -2,14 +2,28 @@ package realtime
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// makeTestJWT builds an unsigned JWT whose payload carries the given expiry.
+// jwtExpiry only reads the `exp` claim (no signature check), so the empty
+// signature segment is sufficient for these tests.
+func makeTestJWT(exp time.Time) string {
+	enc := func(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+	header := enc([]byte(`{"alg":"none","typ":"JWT"}`))
+	payload := enc([]byte(fmt.Sprintf(`{"exp":%d}`, exp.Unix())))
+	return header + "." + payload + "."
+}
 
 func TestReconnectBackoff_ClampsAndNeverZero(t *testing.T) {
 	base := 1 * time.Second
@@ -140,6 +154,105 @@ func TestWebSocket_ResolveToken_LoginWithAPIKey(t *testing.T) {
 	}
 	if token2 != "already-a-jwt" {
 		t.Errorf("expected configured token to be used directly, got %q", token2)
+	}
+}
+
+func TestWebSocket_ResolveToken_CachesJWTAcrossReconnects(t *testing.T) {
+	var logins int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&logins, 1)
+		// A JWT that expires well beyond the refresh leeway.
+		json.NewEncoder(w).Encode(map[string]any{
+			"access_token": makeTestJWT(time.Now().Add(time.Hour)),
+		})
+	}))
+	defer server.Close()
+
+	c := NewWebSocketClient(ConnectionOptions{
+		BaseURL: server.URL,
+		WSURL:   "ws://example.invalid/api/v1/ws",
+		APIKey:  "sp_live_secret",
+	})
+
+	// Two resolutions within the token's lifetime must perform exactly ONE
+	// login; the second reuses the cached JWT.
+	first, err := c.resolveToken(context.Background())
+	if err != nil {
+		t.Fatalf("first resolveToken: %v", err)
+	}
+	second, err := c.resolveToken(context.Background())
+	if err != nil {
+		t.Fatalf("second resolveToken: %v", err)
+	}
+	if first != second {
+		t.Errorf("expected cached token to be reused, got %q then %q", first, second)
+	}
+	if n := atomic.LoadInt32(&logins); n != 1 {
+		t.Fatalf("expected exactly ONE login within token lifetime, got %d", n)
+	}
+}
+
+func TestWebSocket_ResolveToken_ReloginsWhenCachedTokenExpired(t *testing.T) {
+	var logins int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&logins, 1)
+		// Already-expired JWT: every resolution must re-login.
+		json.NewEncoder(w).Encode(map[string]any{
+			"access_token": makeTestJWT(time.Now().Add(-time.Minute)),
+		})
+	}))
+	defer server.Close()
+
+	c := NewWebSocketClient(ConnectionOptions{
+		BaseURL: server.URL,
+		WSURL:   "ws://example.invalid/api/v1/ws",
+		APIKey:  "sp_live_secret",
+	})
+
+	if _, err := c.resolveToken(context.Background()); err != nil {
+		t.Fatalf("first resolveToken: %v", err)
+	}
+	if _, err := c.resolveToken(context.Background()); err != nil {
+		t.Fatalf("second resolveToken: %v", err)
+	}
+	if n := atomic.LoadInt32(&logins); n != 2 {
+		t.Fatalf("expected an expired cached token to trigger re-login (2 logins), got %d", n)
+	}
+}
+
+func TestWebSocket_ResolveToken_ConcurrentReconnectsCoalesceLogin(t *testing.T) {
+	// Simulate a reconnect storm: many goroutines resolve the token at once.
+	// They must coalesce into a single login instead of stampeding /auth/login.
+	var logins int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&logins, 1)
+		json.NewEncoder(w).Encode(map[string]any{
+			"access_token": makeTestJWT(time.Now().Add(time.Hour)),
+		})
+	}))
+	defer server.Close()
+
+	c := NewWebSocketClient(ConnectionOptions{
+		BaseURL: server.URL,
+		WSURL:   "ws://example.invalid/api/v1/ws",
+		APIKey:  "sp_live_secret",
+	})
+
+	const goroutines = 25
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			if _, err := c.resolveToken(context.Background()); err != nil {
+				t.Errorf("resolveToken: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if n := atomic.LoadInt32(&logins); n != 1 {
+		t.Fatalf("expected concurrent reconnects to coalesce into ONE login, got %d", n)
 	}
 }
 

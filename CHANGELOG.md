@@ -5,6 +5,21 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.15] - 2026-07-08
+
+### Fixed
+
+- **Realtime no longer logs in on every WebSocket (re)connect.** The WebSocket
+  client exchanged its API key for a JWT via `POST /api/v1/auth/login` on each
+  connect and reconnect, so a reconnect storm could hammer the rate-limited
+  login endpoint into a 429 and prevent realtime from recovering. The JWT is
+  now cached together with its decoded `exp` claim and reused across
+  reconnects; the client only re-logs in when no token is cached, the cached
+  token is at or near expiry (60s leeway), or the server rejects it (401/403 on
+  the WebSocket upgrade). Concurrent reconnects coalesce into a single login
+  instead of stampeding the endpoint. A statically configured access token is
+  still used verbatim without any login.
+
 ## [1.0.14] - 2026-07-08
 
 ### Fixed
