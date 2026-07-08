@@ -1,6 +1,8 @@
 // Example: Error Handling
 //
-// This example demonstrates proper error handling with the SDK.
+// This example demonstrates proper error handling with the SDK using only the
+// public spooled package: the spooled.Is*Error classifiers, spooled.AsSpooledError
+// for structured access, and spooled.IsRetryable.
 //
 // Usage:
 //
@@ -14,7 +16,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/resources"
 )
@@ -38,6 +39,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
+	defer client.Close()
 
 	ctx := context.Background()
 
@@ -46,7 +48,7 @@ func main() {
 
 	// Example 1: Not Found Error
 	fmt.Println("\n1. Handling Not Found errors:")
-	job, err := client.Jobs().Get(ctx, "non-existent-job-id")
+	job, err := client.Jobs().Get(ctx, "00000000-0000-0000-0000-000000000000")
 	if err != nil {
 		handleError("Get non-existent job", err)
 	} else {
@@ -66,9 +68,10 @@ func main() {
 	// Example 3: Authentication Error
 	fmt.Println("\n3. Handling Authentication errors:")
 	badClient, _ := spooled.NewClient(
-		spooled.WithAPIKey("invalid-api-key"),
+		spooled.WithAPIKey("sp_test_invalid00000000000000000000"),
 		spooled.WithBaseURL(baseURL),
 	)
+	defer badClient.Close()
 	_, err = badClient.Health().Get(ctx)
 	if err != nil {
 		handleError("Request with invalid API key", err)
@@ -78,73 +81,76 @@ func main() {
 	fmt.Println("\n4. Using error type checks:")
 	demoErrorChecks()
 
-	fmt.Println("\n✓ Error handling example complete!")
+	fmt.Println("\nDone. Error handling example complete.")
 }
 
+// handleError classifies an error using only the public spooled API.
 func handleError(operation string, err error) {
 	fmt.Printf("  %s:\n", operation)
 
-	// Check specific error types using errors.As
-	var apiErr *httpx.APIError
-	var circuitErr *httpx.CircuitBreakerOpenError
-	var timeoutErr *httpx.TimeoutError
-	var networkErr *httpx.NetworkError
-
 	switch {
-	case errors.As(err, &apiErr):
-		fmt.Printf("    Type: APIError\n")
-		fmt.Printf("    Status: %d\n", apiErr.StatusCode)
-		fmt.Printf("    Code: %s\n", apiErr.Code)
-		fmt.Printf("    Message: %s\n", apiErr.Message)
+	case spooled.IsNotFoundError(err):
+		fmt.Printf("    Type: NotFoundError\n")
+		fmt.Printf("    Action: Resource doesn't exist - check the ID\n")
 
-		// Check for specific error codes
-		switch apiErr.Code {
-		case "NOT_FOUND":
-			fmt.Printf("    Action: Resource doesn't exist - check ID\n")
-		case "VALIDATION_ERROR":
-			fmt.Printf("    Action: Fix the request parameters\n")
-		case "UNAUTHORIZED", "FORBIDDEN":
-			fmt.Printf("    Action: Check API key or permissions\n")
-		case "RATE_LIMIT_EXCEEDED":
-			fmt.Printf("    Action: Wait and retry\n")
-		default:
-			fmt.Printf("    Action: Check request and retry\n")
+	case spooled.IsValidationError(err):
+		fmt.Printf("    Type: ValidationError\n")
+		fmt.Printf("    Action: Fix the request parameters\n")
+
+	case spooled.IsAuthenticationError(err):
+		fmt.Printf("    Type: AuthenticationError\n")
+		fmt.Printf("    Action: Check the API key\n")
+
+	case spooled.IsAuthorizationError(err):
+		fmt.Printf("    Type: AuthorizationError\n")
+		fmt.Printf("    Action: Check account permissions\n")
+
+	case spooled.IsRateLimitError(err):
+		fmt.Printf("    Type: RateLimitError\n")
+		var rateLimitErr *spooled.RateLimitError
+		if errors.As(err, &rateLimitErr) {
+			fmt.Printf("    Action: Wait %d seconds and retry\n", rateLimitErr.GetRetryAfter())
 		}
 
-	case errors.As(err, &circuitErr):
-		fmt.Printf("    Type: CircuitBreakerOpenError\n")
-		fmt.Printf("    Action: Service is unhealthy - wait for recovery\n")
-
-	case errors.As(err, &timeoutErr):
-		fmt.Printf("    Type: TimeoutError\n")
-		fmt.Printf("    Action: Retry or increase timeout\n")
-
-	case errors.As(err, &networkErr):
-		fmt.Printf("    Type: NetworkError\n")
-		fmt.Printf("    Action: Check network connectivity\n")
+	case spooled.IsServerError(err):
+		fmt.Printf("    Type: ServerError\n")
+		fmt.Printf("    Action: Transient server error - retry with backoff\n")
 
 	default:
 		fmt.Printf("    Type: Unknown (%T)\n", err)
 		fmt.Printf("    Error: %v\n", err)
 	}
+
+	// AsSpooledError exposes the structured fields for any Spooled API error.
+	if apiErr, ok := spooled.AsSpooledError(err); ok {
+		fmt.Printf("    Status: %d\n", apiErr.StatusCode)
+		fmt.Printf("    Code: %s\n", apiErr.Code)
+		fmt.Printf("    Message: %s\n", apiErr.Message)
+		if apiErr.RequestID != "" {
+			fmt.Printf("    RequestID: %s\n", apiErr.RequestID)
+		}
+		fmt.Printf("    Retryable: %v\n", spooled.IsRetryable(err))
+	}
 }
 
+// demoErrorChecks demonstrates spooled.IsRetryable on synthetic errors built
+// entirely from the public error types.
 func demoErrorChecks() {
-	// Demonstrate checking if errors are retryable
 	testCases := []struct {
 		name string
 		err  error
 	}{
-		{"Network error", httpx.NewNetworkError(fmt.Errorf("connection refused"))},
-		{"Timeout error", httpx.NewTimeoutError(30, context.DeadlineExceeded)},
-		{"Circuit breaker", &httpx.CircuitBreakerOpenError{}},
-		{"API 404", &httpx.APIError{StatusCode: 404, Code: "NOT_FOUND", Message: "Resource not found"}},
-		{"API 500", &httpx.APIError{StatusCode: 500, Code: "INTERNAL_ERROR", Message: "Server error"}},
+		{"Network error", &spooled.NetworkError{APIError: &spooled.APIError{Code: "network_error", Message: "connection refused"}}},
+		{"Timeout error", &spooled.TimeoutError{APIError: &spooled.APIError{Code: "timeout", Message: "request timed out"}}},
+		{"Circuit breaker", &spooled.CircuitBreakerOpenError{APIError: &spooled.APIError{Code: "circuit_breaker_open", Message: "circuit breaker is open"}}},
+		{"API 404", &spooled.APIError{StatusCode: 404, Code: "NOT_FOUND", Message: "Resource not found"}},
+		{"API 500", &spooled.APIError{StatusCode: 500, Code: "INTERNAL_ERROR", Message: "Server error"}},
 	}
 
 	for _, tc := range testCases {
 		fmt.Printf("  %s:\n", tc.name)
-		fmt.Printf("    IsRetryable: %v\n", httpx.IsRetryable(tc.err))
+		fmt.Printf("    IsRetryable: %v\n", spooled.IsRetryable(tc.err))
+		fmt.Printf("    IsSpooledError: %v\n", spooled.IsSpooledError(tc.err))
 		fmt.Printf("    Error: %v\n", tc.err)
 	}
 }

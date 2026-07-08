@@ -3,157 +3,70 @@ package spooled
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
-	"time"
+
+	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 )
 
+// The public error types below are aliases for the concrete error types that
+// the transport actually returns. Because they are type aliases (not distinct
+// wrapper types), errors.As / errors.Is and every Is*Error helper in this file
+// match the values the client hands back from real API calls.
+//
+// Historically this package declared a parallel set of struct types that were
+// never produced anywhere, so the helpers (and the documented
+// errors.As(err, &spooled.RateLimitError{}) pattern) silently never matched.
+// Aliasing collapses the two hierarchies into one, which is the fix.
+
 // APIError is the base error type for all Spooled SDK errors.
-type APIError struct {
-	// StatusCode is the HTTP status code.
-	StatusCode int `json:"status_code,omitempty"`
-	// Code is the error code from the API.
-	Code string `json:"code,omitempty"`
-	// Message is the human-readable error message.
-	Message string `json:"message,omitempty"`
-	// Details contains additional error details.
-	Details map[string]any `json:"details,omitempty"`
-	// RequestID is the request ID for debugging.
-	RequestID string `json:"request_id,omitempty"`
-	// RawBody is the raw response body.
-	RawBody []byte `json:"-"`
-	// Err is the underlying error, if any.
-	Err error `json:"-"`
-}
-
-// Error implements the error interface.
-func (e *APIError) Error() string {
-	if e.Message != "" {
-		if e.Code != "" {
-			return fmt.Sprintf("[%d] %s: %s", e.StatusCode, e.Code, e.Message)
-		}
-		return fmt.Sprintf("[%d] %s", e.StatusCode, e.Message)
-	}
-	if e.Code != "" {
-		return fmt.Sprintf("[%d] %s", e.StatusCode, e.Code)
-	}
-	return fmt.Sprintf("[%d] unknown error", e.StatusCode)
-}
-
-// Unwrap returns the underlying error.
-func (e *APIError) Unwrap() error {
-	return e.Err
-}
-
-// IsRetryable returns true if the error is retryable.
-func (e *APIError) IsRetryable() bool {
-	// Network errors, timeouts, 5xx, and 429 are retryable
-	if e.StatusCode >= 500 && e.StatusCode < 600 {
-		return true
-	}
-	if e.StatusCode == http.StatusTooManyRequests {
-		return true
-	}
-	return false
-}
+//
+// Every typed error below embeds *APIError, so errors.As(err, &apiErr) with an
+// *APIError target succeeds for any Spooled API error. Use AsSpooledError for a
+// convenient accessor.
+type APIError = httpx.APIError
 
 // AuthenticationError represents a 401 error.
-type AuthenticationError struct {
-	*APIError
-}
+type AuthenticationError = httpx.AuthenticationError
 
 // AuthorizationError represents a 403 error.
-type AuthorizationError struct {
-	*APIError
-}
+type AuthorizationError = httpx.AuthorizationError
 
 // NotFoundError represents a 404 error.
-type NotFoundError struct {
-	*APIError
-}
+type NotFoundError = httpx.NotFoundError
 
 // ConflictError represents a 409 error.
-type ConflictError struct {
-	*APIError
-}
+type ConflictError = httpx.ConflictError
 
 // ValidationError represents a 400/422 error.
-type ValidationError struct {
-	*APIError
-}
+type ValidationError = httpx.ValidationError
 
-// RateLimitError represents a 429 error.
-type RateLimitError struct {
-	*APIError
-	// RetryAfter is the duration to wait before retrying.
-	RetryAfter time.Duration
-	// Limit is the rate limit.
-	Limit int
-	// Remaining is the remaining requests.
-	Remaining int
-	// Reset is the time when the rate limit resets.
-	Reset time.Time
-}
-
-// GetRetryAfter returns the retry-after duration in seconds.
-func (e *RateLimitError) GetRetryAfter() int {
-	return int(e.RetryAfter.Seconds())
-}
+// RateLimitError represents a 429 error. It carries rate-limit metadata parsed
+// from the response headers (RetryAfter, Limit, Remaining, Reset).
+type RateLimitError = httpx.RateLimitError
 
 // PayloadTooLargeError represents a 413 error.
-type PayloadTooLargeError struct {
-	*APIError
-}
+type PayloadTooLargeError = httpx.PayloadTooLargeError
 
-// ServerError represents a 5xx error.
-type ServerError struct {
-	*APIError
-}
+// ServerError represents a 5xx error. It is always retryable.
+type ServerError = httpx.ServerError
 
-// IsRetryable always returns true for server errors.
-func (e *ServerError) IsRetryable() bool {
-	return true
-}
+// NetworkError represents a network-level error. It is always retryable.
+type NetworkError = httpx.NetworkError
 
-// NetworkError represents a network-level error.
-type NetworkError struct {
-	*APIError
-}
+// TimeoutError represents a timeout error. It is always retryable.
+type TimeoutError = httpx.TimeoutError
 
-// IsRetryable always returns true for network errors.
-func (e *NetworkError) IsRetryable() bool {
-	return true
-}
+// CircuitBreakerOpenError is returned when the circuit breaker is open.
+type CircuitBreakerOpenError = httpx.CircuitBreakerOpenError
 
-// TimeoutError represents a timeout error.
-type TimeoutError struct {
-	*APIError
-	// TimeoutSeconds is the timeout duration in seconds.
-	TimeoutSeconds float64
-}
-
-// IsRetryable always returns true for timeout errors.
-func (e *TimeoutError) IsRetryable() bool {
-	return true
-}
-
-// CircuitBreakerOpenError represents a circuit breaker open error.
-type CircuitBreakerOpenError struct {
-	*APIError
-}
-
-// IsRetryable always returns false for circuit breaker errors.
-func (e *CircuitBreakerOpenError) IsRetryable() bool {
-	return false
-}
-
-// IsSpooledError returns true if the error is a Spooled SDK error.
+// IsSpooledError returns true if the error is (or wraps) a Spooled SDK API error.
 func IsSpooledError(err error) bool {
 	var spErr *APIError
 	return errors.As(err, &spErr)
 }
 
-// AsSpooledError attempts to convert an error to a Spooled APIError.
+// AsSpooledError attempts to extract the underlying Spooled APIError from err.
+// It returns the *APIError and true if err is (or wraps) a Spooled API error.
 func AsSpooledError(err error) (*APIError, bool) {
 	var spErr *APIError
 	if errors.As(err, &spErr) {
@@ -162,9 +75,15 @@ func AsSpooledError(err error) (*APIError, bool) {
 	return nil, false
 }
 
-// IsRetryable returns true if the error is retryable.
+// IsRetryable returns true if the error is retryable (5xx, 429, network, or
+// timeout errors).
 func IsRetryable(err error) bool {
-	// Check for typed error interfaces
+	if err == nil {
+		return false
+	}
+
+	// Check for typed error interfaces first (ServerError, NetworkError,
+	// TimeoutError, and CircuitBreakerOpenError override IsRetryable).
 	type retryable interface {
 		IsRetryable() bool
 	}
@@ -172,7 +91,7 @@ func IsRetryable(err error) bool {
 		return r.IsRetryable()
 	}
 
-	// Check for base APIError
+	// Fall back to the base APIError, which classifies by status code.
 	var spErr *APIError
 	if errors.As(err, &spErr) {
 		return spErr.IsRetryable()
@@ -181,28 +100,52 @@ func IsRetryable(err error) bool {
 	return false
 }
 
-// IsAuthenticationError returns true if the error is an authentication error.
+// IsAuthenticationError returns true if the error is a 401 authentication error.
 func IsAuthenticationError(err error) bool {
 	var authErr *AuthenticationError
 	return errors.As(err, &authErr)
 }
 
-// IsNotFoundError returns true if the error is a not found error.
+// IsAuthorizationError returns true if the error is a 403 authorization error.
+func IsAuthorizationError(err error) bool {
+	var authzErr *AuthorizationError
+	return errors.As(err, &authzErr)
+}
+
+// IsNotFoundError returns true if the error is a 404 not-found error.
 func IsNotFoundError(err error) bool {
 	var notFoundErr *NotFoundError
 	return errors.As(err, &notFoundErr)
 }
 
-// IsRateLimitError returns true if the error is a rate limit error.
+// IsConflictError returns true if the error is a 409 conflict error.
+func IsConflictError(err error) bool {
+	var conflictErr *ConflictError
+	return errors.As(err, &conflictErr)
+}
+
+// IsRateLimitError returns true if the error is a 429 rate-limit error.
 func IsRateLimitError(err error) bool {
 	var rateLimitErr *RateLimitError
 	return errors.As(err, &rateLimitErr)
 }
 
-// IsValidationError returns true if the error is a validation error.
+// IsValidationError returns true if the error is a 400/422 validation error.
 func IsValidationError(err error) bool {
 	var validationErr *ValidationError
 	return errors.As(err, &validationErr)
+}
+
+// IsPayloadTooLargeError returns true if the error is a 413 payload-too-large error.
+func IsPayloadTooLargeError(err error) bool {
+	var payloadErr *PayloadTooLargeError
+	return errors.As(err, &payloadErr)
+}
+
+// IsServerError returns true if the error is a 5xx server error.
+func IsServerError(err error) bool {
+	var serverErr *ServerError
+	return errors.As(err, &serverErr)
 }
 
 // Sentinel errors for common conditions

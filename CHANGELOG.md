@@ -5,6 +5,32 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.14] - 2026-07-08
+
+### Fixed
+
+- **Typed error helpers now match the errors the client actually returns.** The
+  public `spooled.*Error` types were a parallel hierarchy the client never
+  produced, so `spooled.IsNotFoundError`, `IsValidationError`,
+  `IsAuthenticationError`, `IsRateLimitError`, `IsSpooledError`, and
+  `AsSpooledError` always reported no match against real API errors (only the
+  interface-based `IsRetryable` worked). The public error types are now aliases
+  for the concrete types the transport returns, so every `Is*Error` helper,
+  `AsSpooledError`, and the documented `errors.As(err, &spooled.RateLimitError{})`
+  pattern classify real 4xx/5xx responses correctly.
+
+### Added
+
+- `spooled.IsAuthorizationError` (403), `spooled.IsConflictError` (409),
+  `spooled.IsPayloadTooLargeError` (413), and `spooled.IsServerError` (5xx)
+  classifiers to round out the public error API.
+
+### Changed
+
+- `examples/error-handling` no longer imports the unreachable `internal/httpx`
+  package; it now demonstrates error classification using only the public
+  `spooled` API.
+
 ## [1.0.13] - 2026-07-08
 
 ### Fixed
