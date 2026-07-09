@@ -82,6 +82,40 @@ func TestPublicHelpers_MatchTransportErrors(t *testing.T) {
 	}
 }
 
+// TestPublicHelpers_ArrayDetails is a regression test for the shipped bug where
+// a 400 body carrying `details` as an ARRAY (the shape the backend emits for
+// validation failures) made the decoder drop Code/Message/Details entirely.
+// The public spooled.IsValidationError / AsSpooledError helpers must still
+// classify the error and expose the populated fields.
+func TestPublicHelpers_ArrayDetails(t *testing.T) {
+	body := []byte(`{"error":"Validation failed","code":"VALIDATION_ERROR","details":[` +
+		`{"field":"queue_name","message":"queue_name is required","code":"missing_field"}]}`)
+	err := httpx.ParseErrorFromResponse(http.StatusBadRequest, body, http.Header{})
+
+	if !spooled.IsValidationError(err) {
+		t.Fatalf("IsValidationError(array-details 400) = false, want true (type %T)", err)
+	}
+	apiErr, ok := spooled.AsSpooledError(err)
+	if !ok {
+		t.Fatal("AsSpooledError(array-details 400) ok = false, want true")
+	}
+	if apiErr.Code != "VALIDATION_ERROR" {
+		t.Errorf("Code = %q, want VALIDATION_ERROR (was dropped by the array-details bug)", apiErr.Code)
+	}
+	// No top-level "message" field, so the decoder falls back to "error".
+	if apiErr.Message != "Validation failed" {
+		t.Errorf("Message = %q, want %q", apiErr.Message, "Validation failed")
+	}
+	fieldErrs, ok := apiErr.Details["errors"].([]any)
+	if !ok || len(fieldErrs) != 1 {
+		t.Fatalf(`Details["errors"] = %#v, want a 1-element slice of field errors`, apiErr.Details)
+	}
+	first, _ := fieldErrs[0].(map[string]any)
+	if first["field"] != "queue_name" {
+		t.Errorf("field error field = %v, want queue_name", first["field"])
+	}
+}
+
 // TestPublicHelpers_OtherStatuses covers the remaining classifiers.
 func TestPublicHelpers_OtherStatuses(t *testing.T) {
 	cases := []struct {

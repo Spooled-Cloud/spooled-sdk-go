@@ -139,6 +139,56 @@ func TestParseErrorFromResponse(t *testing.T) {
 	}
 }
 
+// TestParseErrorFromResponse_Details covers the two `details` shapes the server
+// sends: an object (used as-is) and an array of per-field validation errors
+// (the backend's ValidationErrorResponse shape). The array case is a regression
+// test: decoding it straight into a map[string]any used to fail the whole
+// json.Unmarshal, silently dropping Code and Message too.
+func TestParseErrorFromResponse_Details(t *testing.T) {
+	t.Run("array details keep code and message and wrap under errors", func(t *testing.T) {
+		body := []byte(`{"error":"Validation failed","code":"VALIDATION_ERROR","details":[` +
+			`{"field":"queue_name","message":"queue_name is required","code":"missing_field"}]}`)
+		err := ParseErrorFromResponse(http.StatusBadRequest, body, http.Header{})
+
+		if !IsValidationError(err) {
+			t.Fatalf("expected a ValidationError, got %T", err)
+		}
+		apiErr, ok := AsAPIError(err)
+		if !ok {
+			t.Fatal("AsAPIError failed to extract APIError")
+		}
+		if apiErr.Code != "VALIDATION_ERROR" {
+			t.Errorf("Code = %q, want VALIDATION_ERROR", apiErr.Code)
+		}
+		if apiErr.Message != "Validation failed" {
+			t.Errorf("Message = %q, want fallback %q from the error field", apiErr.Message, "Validation failed")
+		}
+		fieldErrs, ok := apiErr.Details["errors"].([]any)
+		if !ok || len(fieldErrs) != 1 {
+			t.Fatalf(`Details["errors"] = %#v, want a 1-element slice`, apiErr.Details)
+		}
+		if first, _ := fieldErrs[0].(map[string]any); first["field"] != "queue_name" {
+			t.Errorf("first field error = %#v, want field=queue_name", fieldErrs[0])
+		}
+		// Error() must render the recovered code and message.
+		if got := err.Error(); got != "[400] VALIDATION_ERROR: Validation failed" {
+			t.Errorf("Error() = %q, want %q", got, "[400] VALIDATION_ERROR: Validation failed")
+		}
+	})
+
+	t.Run("object details are used as-is", func(t *testing.T) {
+		body := []byte(`{"code":"VALIDATION_ERROR","message":"bad","details":{"field":"queue_name"}}`)
+		err := ParseErrorFromResponse(http.StatusBadRequest, body, http.Header{})
+		apiErr, ok := AsAPIError(err)
+		if !ok {
+			t.Fatal("AsAPIError failed to extract APIError")
+		}
+		if apiErr.Details["field"] != "queue_name" {
+			t.Errorf(`Details["field"] = %v, want queue_name`, apiErr.Details["field"])
+		}
+	})
+}
+
 func TestParseErrorFromResponse_RateLimit(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Retry-After", "60")

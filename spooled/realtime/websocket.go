@@ -19,7 +19,6 @@ type WebSocketClient struct {
 	reconnectAttempts int
 	reconnectTimer    *time.Timer
 	subscriptions     map[string]SubscriptionFilter
-	pendingCommands   map[string]chan error
 
 	// tokens caches the JWT exchanged from an API key so reconnects reuse it
 	// instead of logging in every time. Unused when a static token is set.
@@ -33,11 +32,9 @@ type WebSocketClient struct {
 	stateChangeHandlers []StateChangeHandler
 
 	mu     sync.RWMutex
-	cmdMu  sync.Mutex
 	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
-	cmdSeq int
 }
 
 // NewWebSocketClient creates a new WebSocket realtime client.
@@ -63,7 +60,6 @@ func NewWebSocketClient(opts ConnectionOptions) *WebSocketClient {
 		opts:                opts,
 		state:               StateDisconnected,
 		subscriptions:       make(map[string]SubscriptionFilter),
-		pendingCommands:     make(map[string]chan error),
 		eventHandlers:       make(map[EventType][]JobEventHandler),
 		queueEventHandlers:  make(map[EventType][]QueueEventHandler),
 		workerEventHandlers: make(map[EventType][]WorkerEventHandler),
@@ -223,92 +219,63 @@ func (c *WebSocketClient) State() ConnectionState {
 	return c.state
 }
 
-// Subscribe adds a subscription filter.
+// Subscribe registers a subscription filter with the server.
+//
+// The server applies the queue/job filters supplied at connection time and
+// treats the subscribe command as advisory; it sends NO acknowledgement. Prior
+// versions sent {"type":"subscribe",...} and then blocked up to 10s waiting for
+// a "subscribed" reply that never arrived (stalling every reconnect resubscribe).
+// Subscribe is now fire-and-forget: it writes {"cmd":"subscribe","queue","job_id"}
+// and records the filter for replay on reconnect, without waiting on a reply.
 func (c *WebSocketClient) Subscribe(filter SubscriptionFilter) error {
-	c.cmdMu.Lock()
-	c.cmdSeq++
-	requestID := fmt.Sprintf("sub-%d", c.cmdSeq)
-	c.cmdMu.Unlock()
-
 	cmd := wsCommand{
-		Type:      "subscribe",
-		RequestID: requestID,
-		Filter:    &filter,
+		Cmd:   "subscribe",
+		Queue: filter.QueueName,
+		JobID: filter.JobID,
 	}
 
-	respCh := make(chan error, 1)
-	c.cmdMu.Lock()
-	c.pendingCommands[requestID] = respCh
-	c.cmdMu.Unlock()
-
-	defer func() {
-		c.cmdMu.Lock()
-		delete(c.pendingCommands, requestID)
-		c.cmdMu.Unlock()
-	}()
-
-	data, err := json.Marshal(cmd)
-	if err != nil {
-		return fmt.Errorf("failed to marshal subscribe command: %w", err)
+	if err := c.sendCommand(cmd); err != nil {
+		return err
 	}
 
-	c.mu.RLock()
-	conn := c.conn
-	ctx := c.ctx
-	c.mu.RUnlock()
-
-	if conn == nil {
-		return fmt.Errorf("not connected")
-	}
-
-	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
-		return fmt.Errorf("failed to send subscribe command: %w", err)
-	}
-
-	// Wait for response with timeout
-	select {
-	case err := <-respCh:
-		if err != nil {
-			return err
-		}
-		// Store subscription
-		key := subscriptionKey(filter)
-		c.mu.Lock()
-		c.subscriptions[key] = filter
-		c.mu.Unlock()
-		return nil
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("subscribe timeout")
-	}
+	// Record the subscription so it can be replayed after a reconnect.
+	key := subscriptionKey(filter)
+	c.mu.Lock()
+	c.subscriptions[key] = filter
+	c.mu.Unlock()
+	return nil
 }
 
 // Unsubscribe removes a subscription.
+//
+// Like Subscribe, this is fire-and-forget: the server sends no acknowledgement,
+// so it writes {"cmd":"unsubscribe","queue","job_id"} and drops the stored
+// filter without blocking on a reply.
 func (c *WebSocketClient) Unsubscribe(filter SubscriptionFilter) error {
-	c.cmdMu.Lock()
-	c.cmdSeq++
-	requestID := fmt.Sprintf("unsub-%d", c.cmdSeq)
-	c.cmdMu.Unlock()
-
 	cmd := wsCommand{
-		Type:      "unsubscribe",
-		RequestID: requestID,
-		Filter:    &filter,
+		Cmd:   "unsubscribe",
+		Queue: filter.QueueName,
+		JobID: filter.JobID,
 	}
 
-	respCh := make(chan error, 1)
-	c.cmdMu.Lock()
-	c.pendingCommands[requestID] = respCh
-	c.cmdMu.Unlock()
+	if err := c.sendCommand(cmd); err != nil {
+		return err
+	}
 
-	defer func() {
-		c.cmdMu.Lock()
-		delete(c.pendingCommands, requestID)
-		c.cmdMu.Unlock()
-	}()
+	// Remove the stored subscription.
+	key := subscriptionKey(filter)
+	c.mu.Lock()
+	delete(c.subscriptions, key)
+	c.mu.Unlock()
+	return nil
+}
 
+// sendCommand marshals and writes a client command to the WebSocket. It does
+// not wait for a reply because the server does not acknowledge commands.
+func (c *WebSocketClient) sendCommand(cmd wsCommand) error {
 	data, err := json.Marshal(cmd)
 	if err != nil {
-		return fmt.Errorf("failed to marshal unsubscribe command: %w", err)
+		return fmt.Errorf("failed to marshal %s command: %w", cmd.Cmd, err)
 	}
 
 	c.mu.RLock()
@@ -321,24 +288,9 @@ func (c *WebSocketClient) Unsubscribe(filter SubscriptionFilter) error {
 	}
 
 	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
-		return fmt.Errorf("failed to send unsubscribe command: %w", err)
+		return fmt.Errorf("failed to send %s command: %w", cmd.Cmd, err)
 	}
-
-	// Wait for response with timeout
-	select {
-	case err := <-respCh:
-		if err != nil {
-			return err
-		}
-		// Remove subscription
-		key := subscriptionKey(filter)
-		c.mu.Lock()
-		delete(c.subscriptions, key)
-		c.mu.Unlock()
-		return nil
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("unsubscribe timeout")
-	}
+	return nil
 }
 
 // OnEvent registers a handler for all events.
@@ -409,43 +361,20 @@ func (c *WebSocketClient) readLoop() {
 func (c *WebSocketClient) handleMessage(data []byte) {
 	c.log("Received message: %s", string(data))
 
-	// Try to parse as command response first
-	var resp wsResponse
-	if err := json.Unmarshal(data, &resp); err == nil {
-		if resp.Type == "subscribed" || resp.Type == "unsubscribed" || resp.Type == "error" {
-			c.handleCommandResponse(resp)
-			return
-		}
-	}
-
-	// Parse as event
+	// Parse as an event. The server tags events with a "type" field (and nests
+	// the payload under "data"); it does not acknowledge subscribe/unsubscribe,
+	// so there are no command responses to route here.
 	var event Event
 	if err := json.Unmarshal(data, &event); err != nil {
 		c.log("Failed to parse event: %v", err)
 		return
 	}
 
+	// Normalize the server's PascalCase event type (e.g. "JobCreated") to the
+	// SDK's canonical dotted EventType before dispatching typed handlers.
+	event.Type = normalizeEventType(event.Type)
+
 	c.dispatchEvent(&event)
-}
-
-func (c *WebSocketClient) handleCommandResponse(resp wsResponse) {
-	if resp.RequestID == "" {
-		return
-	}
-
-	c.cmdMu.Lock()
-	ch, ok := c.pendingCommands[resp.RequestID]
-	c.cmdMu.Unlock()
-
-	if !ok {
-		return
-	}
-
-	if resp.Type == "error" {
-		ch <- fmt.Errorf("command error: %s", resp.Error)
-	} else {
-		ch <- nil
-	}
 }
 
 func (c *WebSocketClient) dispatchEvent(event *Event) {
@@ -610,7 +539,8 @@ func subscriptionKey(filter SubscriptionFilter) string {
 
 func isJobEvent(t EventType) bool {
 	switch t {
-	case EventJobCreated, EventJobStarted, EventJobCompleted, EventJobFailed, EventJobRetrying, EventJobProgress:
+	case EventJobStatusChanged, EventJobCreated, EventJobStarted, EventJobCompleted,
+		EventJobFailed, EventJobRetrying, EventJobProgress:
 		return true
 	}
 	return false
@@ -618,7 +548,7 @@ func isJobEvent(t EventType) bool {
 
 func isQueueEvent(t EventType) bool {
 	switch t {
-	case EventQueuePaused, EventQueueResumed:
+	case EventQueueStats, EventQueuePaused, EventQueueResumed:
 		return true
 	}
 	return false
@@ -626,7 +556,8 @@ func isQueueEvent(t EventType) bool {
 
 func isWorkerEvent(t EventType) bool {
 	switch t {
-	case EventWorkerJoined, EventWorkerLeft, EventWorkerActive, EventWorkerInactive:
+	case EventWorkerHeartbeat, EventWorkerRegistered, EventWorkerDeregistered,
+		EventWorkerJoined, EventWorkerLeft, EventWorkerActive, EventWorkerInactive:
 		return true
 	}
 	return false

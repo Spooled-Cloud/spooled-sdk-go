@@ -147,18 +147,26 @@ func ParseErrorFromResponse(statusCode int, body []byte, headers http.Header) er
 		RawBody:    body,
 	}
 
-	// Parse JSON body
+	// Parse JSON body.
+	//
+	// `details` is decoded as a raw message rather than a map[string]any because
+	// the server sends it in two shapes: an object (a map of field → info) for
+	// most errors, and an ARRAY of per-field errors for validation failures
+	// (e.g. {"code":"VALIDATION_ERROR","details":[{"field":...}]}). Decoding the
+	// array straight into a map used to fail the whole json.Unmarshal, silently
+	// dropping Code/Message/Details. Deferring the details shape to parseDetails
+	// keeps Code and Message populated regardless of which shape arrives.
 	if len(body) > 0 {
 		var apiErr struct {
-			Code    string         `json:"code"`
-			Message string         `json:"message"`
-			Details map[string]any `json:"details"`
-			Error   string         `json:"error"`
+			Code    string          `json:"code"`
+			Message string          `json:"message"`
+			Details json.RawMessage `json:"details"`
+			Error   string          `json:"error"`
 		}
 		if json.Unmarshal(body, &apiErr) == nil {
 			baseErr.Code = apiErr.Code
 			baseErr.Message = apiErr.Message
-			baseErr.Details = apiErr.Details
+			baseErr.Details = parseDetails(apiErr.Details)
 			if baseErr.Message == "" && apiErr.Error != "" {
 				baseErr.Message = apiErr.Error
 			}
@@ -186,6 +194,30 @@ func ParseErrorFromResponse(statusCode int, body []byte, headers http.Header) er
 		}
 		return baseErr
 	}
+}
+
+// parseDetails normalizes the `details` field of an error body into a
+// map[string]any so callers always read APIError.Details the same way.
+//
+// The server sends `details` as either a JSON object (used as-is) or a JSON
+// array of per-field validation errors. An array is wrapped under the "errors"
+// key so it remains accessible as err.Details["errors"]. A null, absent, or
+// otherwise non-object/array value yields nil.
+func parseDetails(raw json.RawMessage) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	// Object shape (or JSON null, which decodes to a nil map without error).
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err == nil {
+		return obj
+	}
+	// Array shape: wrap so the field errors stay reachable via a stable key.
+	var arr []any
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		return map[string]any{"errors": arr}
+	}
+	return nil
 }
 
 func parseRateLimitError(baseErr *APIError, headers http.Header) *RateLimitError {

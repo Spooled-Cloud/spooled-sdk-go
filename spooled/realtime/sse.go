@@ -290,10 +290,14 @@ func (c *SSEClient) handleSSEEvent(eventType string, data string) {
 		}
 	}
 
-	// If no event type from SSE, use the one from JSON
+	// If no event type from JSON body, fall back to the SSE `event:` line type.
 	if eventType != "" && event.Type == "" {
 		event.Type = EventType(eventType)
 	}
+
+	// Normalize the server's event type (PascalCase in the JSON body, or a dotted
+	// SSE `event:` name) to the SDK's canonical dotted EventType before dispatch.
+	event.Type = normalizeEventType(event.Type)
 
 	c.dispatchEvent(&event)
 }

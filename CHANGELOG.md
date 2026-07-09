@@ -5,6 +5,35 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.17] - 2026-07-09
+
+### Fixed
+
+- **Real-time events now dispatch to typed handlers.** The server tags events
+  with PascalCase variant names (`JobCreated`, `JobStatusChange`, `QueueStats`,
+  `WorkerHeartbeat`, …), but the SDK only recognized dotted names, so typed
+  `OnJobEvent`/`OnQueueEvent`/`OnWorkerEvent` handlers never fired (only the
+  catch-all `OnEvent` did). Incoming event types are now normalized to the SDK's
+  canonical dotted names (`job.created`, `job.status_changed`, `queue.stats`,
+  `worker.heartbeat`, `worker.registered`, `worker.deregistered`,
+  `system.health`, `ping`, `error`) on both the WebSocket and SSE transports
+  before dispatch. Unknown/future types still pass through to `OnEvent`.
+- **WebSocket subscribe/unsubscribe no longer stall.** The client sent
+  `{"type":"subscribe",...}` and then blocked up to 10s waiting for a
+  `"subscribed"` acknowledgement the server never sends — hanging every reconnect
+  resubscribe. It now sends the server's expected
+  `{"cmd":"subscribe","queue","job_id"}` (and the `unsubscribe` equivalent)
+  fire-and-forget, recording the filter for replay on reconnect without waiting
+  on a reply.
+- **Validation errors with array `details` are parsed correctly.** A 400 body of
+  the backend's shape `{"code":"VALIDATION_ERROR","details":[{"field":…}]}` has
+  `details` as an ARRAY. The decoder previously typed `details` as an object, so
+  the whole JSON decode failed and silently dropped `Code`, `Message`, and
+  `Details`. The decoder now tolerates `details` being either an array or an
+  object: an object is used as-is and an array is exposed under
+  `err.Details["errors"]`, with `Code`/`Message` populated either way.
+  `spooled.IsValidationError` and `spooled.AsSpooledError` work as expected.
+
 ## [1.0.16] - 2026-07-09
 
 ### Fixed
