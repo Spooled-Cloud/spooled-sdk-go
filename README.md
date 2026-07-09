@@ -543,7 +543,13 @@ if err != nil {
     case *spooled.AuthenticationError:
         fmt.Printf("Invalid API key: %s\n", e.Message)
     case *spooled.RateLimitError:
-        fmt.Printf("Rate limited. Retry after: %v\n", e.Reset)
+        // 429 covers both per-second rate limiting and plan-quota errors.
+        // A plan quota carries Code == "QUOTA_EXCEEDED" (with resource/current/limit/plan details).
+        if e.Code == "QUOTA_EXCEEDED" {
+            fmt.Printf("Plan quota exceeded: %s\n", e.Message)
+        } else {
+            fmt.Printf("Rate limited. Retry after: %v\n", e.Reset)
+        }
     case *spooled.ValidationError:
         fmt.Printf("Invalid request: %v\n", e.Errors)
     default:
