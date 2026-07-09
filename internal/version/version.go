@@ -9,7 +9,7 @@ import (
 // SDK version constants
 const (
 	// Version is the current SDK version.
-	Version = "1.0.17"
+	Version = "1.0.18"
 
 	// SDKName is the name of the SDK.
 	SDKName = "spooled-go"

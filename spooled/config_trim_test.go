@@ -1,6 +1,7 @@
 package spooled
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -101,9 +102,9 @@ func TestConfigAPIKey_YieldsValidBearerHeader(t *testing.T) {
 
 	// Actually attempt to construct the header net/http will reject if it
 	// contains any control character. This mirrors the transport code path.
-	req, err := http.NewRequest(http.MethodGet, "https://api.spooled.cloud/api/v1/health", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://api.spooled.cloud/api/v1/health", nil)
 	if err != nil {
-		t.Fatalf("http.NewRequest failed: %v", err)
+		t.Fatalf("http.NewRequestWithContext failed: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 
