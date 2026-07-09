@@ -94,7 +94,11 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		conn:         conn,
 		queueClient:  pb.NewQueueServiceClient(conn),
 		workerClient: pb.NewWorkerServiceClient(conn),
-		apiKey:       opts.APIKey,
+		// gRPC metadata (like HTTP headers) rejects '\r' / '\n' at the transport
+		// layer with an opaque error. Trim here so callers who construct
+		// `ClientOptions` directly (bypassing spooled.resolveConfig) don't get
+		// an inscrutable failure from a stray newline in their API key.
+		apiKey: strings.TrimSpace(opts.APIKey),
 	}, nil
 }
 

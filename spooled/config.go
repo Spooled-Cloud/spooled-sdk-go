@@ -260,6 +260,16 @@ func resolveConfig(opts ...Option) *Config {
 		opt(cfg)
 	}
 
+	// Trim whitespace (including a trailing newline) from every credential.
+	// Go's net/http and the tonic-based gRPC gateway both reject CR/LF in
+	// header values with an opaque error; users who read keys from files or
+	// paste them into shells routinely end up with a stray '\n', so we
+	// normalize here rather than surfacing an inscrutable transport failure.
+	cfg.APIKey = strings.TrimSpace(cfg.APIKey)
+	cfg.AccessToken = strings.TrimSpace(cfg.AccessToken)
+	cfg.RefreshToken = strings.TrimSpace(cfg.RefreshToken)
+	cfg.AdminKey = strings.TrimSpace(cfg.AdminKey)
+
 	// Derive WS URL from base URL if not explicitly set
 	if cfg.WSURL == DefaultWSURL && cfg.BaseURL != DefaultBaseURL {
 		cfg.WSURL = deriveWSURL(cfg.BaseURL)

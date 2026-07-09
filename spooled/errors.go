@@ -162,7 +162,14 @@ var (
 
 // ValidateAPIKey validates the format of an API key.
 // Accepts both sk_ (production keys) and sp_ (documentation examples) prefixes.
+//
+// The key is trimmed of surrounding whitespace (including trailing newlines)
+// before validation so callers reading keys from files or environment
+// variables do not need to normalize input themselves. This mirrors the
+// trimming performed by `resolveConfig` so `ValidateAPIKey` and the
+// eventual `Authorization` header agree on what a "valid" key is.
 func ValidateAPIKey(key string) error {
+	key = strings.TrimSpace(key)
 	if key == "" {
 		return ErrNoAuth
 	}
