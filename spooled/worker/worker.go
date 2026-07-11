@@ -18,6 +18,9 @@ type activeJob struct {
 	cancel    context.CancelFunc
 	startTime time.Time
 	heartbeat *time.Ticker
+	// leaseID is the lease fencing token captured at claim time; echoed on
+	// complete/fail/heartbeat so stale leases are rejected by the server.
+	leaseID *string
 }
 
 // Worker processes jobs from a Spooled queue using REST polling.
@@ -339,6 +342,7 @@ func (w *Worker) processJob(job resources.ClaimedJob) {
 		ctx:       jobCtx,
 		cancel:    jobCancel,
 		startTime: time.Now(),
+		leaseID:   job.LeaseID,
 	}
 
 	w.activeJobs.Store(job.ID, aj)
@@ -403,6 +407,15 @@ func (w *Worker) processJob(job resources.ClaimedJob) {
 	}()
 }
 
+// leaseIDFor returns the lease fencing token captured when jobID was claimed,
+// or nil if the job is no longer tracked (or was claimed without a token).
+func (w *Worker) leaseIDFor(jobID string) *string {
+	if value, ok := w.activeJobs.Load(jobID); ok {
+		return value.(*activeJob).leaseID
+	}
+	return nil
+}
+
 func (w *Worker) completeJob(jobID string, result map[string]any, duration time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -414,6 +427,7 @@ func (w *Worker) completeJob(jobID string, result map[string]any, duration time.
 	if err := w.jobs.Complete(ctx, jobID, &resources.CompleteJobRequest{
 		WorkerID: workerID,
 		Result:   result,
+		LeaseID:  w.leaseIDFor(jobID),
 	}); err != nil {
 		w.log("Failed to complete job %s: %v", jobID, err)
 	}
@@ -442,6 +456,7 @@ func (w *Worker) failJob(jobID string, jobErr error, duration time.Duration) {
 	if err := w.jobs.Fail(ctx, jobID, &resources.FailJobRequest{
 		WorkerID: workerID,
 		Error:    jobErr.Error(),
+		LeaseID:  w.leaseIDFor(jobID),
 	}); err != nil {
 		w.log("Failed to fail job %s: %v", jobID, err)
 	}
@@ -505,6 +520,7 @@ func (w *Worker) renewJobLease(jobID string) {
 	if _, err := w.jobs.RenewLease(ctx, jobID, &resources.RenewLeaseRequest{
 		WorkerID:         workerID,
 		LeaseDurationSec: w.opts.LeaseDuration,
+		LeaseID:          w.leaseIDFor(jobID),
 	}); err != nil {
 		w.log("Failed to renew lease for job %s: %v", jobID, err)
 	} else {

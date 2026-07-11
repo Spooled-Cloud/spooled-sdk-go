@@ -301,6 +301,10 @@ type ClaimedJob struct {
 	MaxRetries     int            `json:"max_retries"`
 	TimeoutSeconds int            `json:"timeout_seconds"`
 	LeaseExpiresAt *time.Time     `json:"lease_expires_at,omitempty"`
+	// LeaseID is the lease fencing token issued by the server for this claim.
+	// Echo it back on complete/fail/heartbeat so the operation applies only to
+	// the lease this worker actually holds (nil = legacy worker_id fence).
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // ClaimJobsResponse is the response from claiming jobs.
@@ -321,6 +325,9 @@ func (r *JobsResource) Claim(ctx context.Context, req *ClaimJobsRequest) (*Claim
 type CompleteJobRequest struct {
 	WorkerID string         `json:"worker_id"`
 	Result   map[string]any `json:"result,omitempty"`
+	// LeaseID is the lease fencing token from the claimed job. When set, the
+	// completion succeeds only if it matches the job's current lease.
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // Complete marks a job as completed.
@@ -332,6 +339,9 @@ func (r *JobsResource) Complete(ctx context.Context, id string, req *CompleteJob
 type FailJobRequest struct {
 	WorkerID string `json:"worker_id"`
 	Error    string `json:"error"`
+	// LeaseID is the lease fencing token from the claimed job. When set, the
+	// failure succeeds only if it matches the job's current lease.
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // Fail marks a job as failed.
@@ -343,6 +353,9 @@ func (r *JobsResource) Fail(ctx context.Context, id string, req *FailJobRequest)
 type HeartbeatRequest struct {
 	WorkerID         string `json:"worker_id"`
 	LeaseDurationSec *int   `json:"lease_duration_secs,omitempty"`
+	// LeaseID is the lease fencing token from the claimed job. When set, the
+	// heartbeat succeeds only if it matches the job's current lease.
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // Heartbeat sends a heartbeat for a job to extend its lease.
@@ -354,6 +367,9 @@ func (r *JobsResource) Heartbeat(ctx context.Context, id string, req *HeartbeatR
 type RenewLeaseRequest struct {
 	WorkerID         string `json:"worker_id"`
 	LeaseDurationSec int    `json:"lease_duration_secs,omitempty"`
+	// LeaseID is the lease fencing token from the claimed job. When set, the
+	// renewal succeeds only if it matches the job's current lease.
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // RenewLeaseResponse is the response from renewing a lease.
@@ -368,6 +384,7 @@ func (r *JobsResource) RenewLease(ctx context.Context, id string, req *RenewLeas
 	hbReq := &HeartbeatRequest{
 		WorkerID:         req.WorkerID,
 		LeaseDurationSec: &req.LeaseDurationSec,
+		LeaseID:          req.LeaseID,
 	}
 	if err := r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/heartbeat", id), hbReq, &result); err != nil {
 		return nil, err

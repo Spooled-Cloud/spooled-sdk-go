@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
+	"github.com/spooled-cloud/spooled-sdk-go/internal/version"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/grpc"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/realtime"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/resources"
@@ -73,7 +74,7 @@ func (w *SpooledWorker) Start() error {
 		opts.WorkerType = "go"
 	}
 	if opts.Version == "" {
-		opts.Version = "1.0.14"
+		opts.Version = version.Version
 	}
 	if opts.Metadata == nil {
 		opts.Metadata = make(map[string]string)

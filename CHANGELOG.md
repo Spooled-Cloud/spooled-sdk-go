@@ -5,6 +5,23 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.19] - 2026-07-11
+
+### Added
+
+- **Lease fencing token support** (backend v0.1.94, audit F9). Claim/dequeue
+  responses now carry a `lease_id` fencing token, and the SDK echoes it back on
+  complete/fail/heartbeat/renew so an operation succeeds only if the worker
+  still holds the job's current lease (a stale token is rejected with 409
+  `LEASE_EXPIRED` over REST, `FAILED_PRECONDITION` over gRPC). REST:
+  `ClaimedJob.LeaseID` plus optional `LeaseID` on `CompleteJobRequest`,
+  `FailJobRequest`, `HeartbeatRequest`, and `RenewLeaseRequest`; the polling
+  worker captures the token at claim time and sends it automatically. gRPC:
+  regenerated stubs with the new `lease_id` fields; the wrapper `Job` exposes
+  `LeaseID`, and `CompleteRequest`/`FailRequest`/`RenewLeaseRequest` accept it.
+  Omitting the token preserves the legacy worker_id-only fence, so existing
+  code keeps working unchanged.
+
 ## [1.0.18] - 2026-07-09
 
 ### Changed

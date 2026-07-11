@@ -191,6 +191,11 @@ type Job struct {
 	MaxRetries     int32
 	TimeoutSeconds int32
 	LeaseExpiresAt *time.Time
+	// LeaseID is the lease fencing token issued by the server for this
+	// dequeue. Echo it back on Complete/Fail/RenewLease so the operation
+	// applies only to the lease this worker actually holds (empty = legacy
+	// worker_id fence).
+	LeaseID string
 }
 
 // DequeueResponse is the response from dequeuing jobs.
@@ -227,6 +232,9 @@ type CompleteRequest struct {
 	JobID    string
 	WorkerID string
 	Result   map[string]any
+	// LeaseID is the lease fencing token from the dequeued Job. When set, the
+	// completion succeeds only if it matches the job's current lease.
+	LeaseID string
 }
 
 // Complete marks a job as completed.
@@ -236,6 +244,7 @@ func (c *Client) Complete(ctx context.Context, req *CompleteRequest) error {
 	pbReq := &pb.CompleteRequest{
 		JobId:    req.JobID,
 		WorkerId: req.WorkerID,
+		LeaseId:  req.LeaseID,
 	}
 
 	if req.Result != nil {
@@ -255,6 +264,9 @@ type FailRequest struct {
 	WorkerID string
 	Error    string
 	Retry    bool
+	// LeaseID is the lease fencing token from the dequeued Job. When set, the
+	// failure succeeds only if it matches the job's current lease.
+	LeaseID string
 }
 
 // Fail marks a job as failed.
@@ -266,6 +278,7 @@ func (c *Client) Fail(ctx context.Context, req *FailRequest) error {
 		WorkerId: req.WorkerID,
 		Error:    req.Error,
 		Retry:    req.Retry,
+		LeaseId:  req.LeaseID,
 	}
 
 	_, err := c.queueClient.Fail(ctx, pbReq)
@@ -277,6 +290,9 @@ type RenewLeaseRequest struct {
 	JobID         string
 	WorkerID      string
 	ExtensionSecs int32
+	// LeaseID is the lease fencing token from the dequeued Job. When set, the
+	// renewal succeeds only if it matches the job's current lease.
+	LeaseID string
 }
 
 // RenewLeaseResponse is the response from renewing a lease.
@@ -293,6 +309,7 @@ func (c *Client) RenewLease(ctx context.Context, req *RenewLeaseRequest) (*Renew
 		JobId:         req.JobID,
 		WorkerId:      req.WorkerID,
 		ExtensionSecs: req.ExtensionSecs,
+		LeaseId:       req.LeaseID,
 	}
 
 	resp, err := c.queueClient.RenewLease(ctx, pbReq)
@@ -459,6 +476,7 @@ func pbJobToJob(j *pb.Job) *Job {
 		RetryCount:     j.RetryCount,
 		MaxRetries:     j.MaxRetries,
 		TimeoutSeconds: j.TimeoutSeconds,
+		LeaseID:        j.LeaseId,
 	}
 
 	if j.Payload != nil {

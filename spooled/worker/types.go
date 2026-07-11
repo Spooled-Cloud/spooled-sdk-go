@@ -4,6 +4,8 @@ package worker
 import (
 	"context"
 	"time"
+
+	"github.com/spooled-cloud/spooled-sdk-go/internal/version"
 )
 
 // State represents the worker state.
@@ -55,7 +57,7 @@ func DefaultOptions() Options {
 		HeartbeatFraction: 0.5,
 		ShutdownTimeout:   30 * time.Second,
 		WorkerType:        "go",
-		Version:           "0.1.0",
+		Version:           version.Version,
 	}
 }
 
