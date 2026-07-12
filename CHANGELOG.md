@@ -328,6 +328,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced metrics integration
 - OpenTelemetry tracing support
 
+[1.0.20]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.20
+[1.0.19]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.19
+[1.0.18]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.18
+[1.0.17]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.17
+[1.0.16]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.16
+[1.0.15]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.15
+[1.0.14]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.14
+[1.0.13]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.13
+[1.0.12]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.12
 [1.0.11]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.11
 [1.0.10]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.10
 [1.0.9]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.9
@@ -338,4 +347,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.3]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.3
 [1.0.2]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.2
 [1.0.0]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.0
-[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.11...HEAD
+[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.20...HEAD

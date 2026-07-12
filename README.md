@@ -310,10 +310,15 @@ w.OnEvent(func(event worker.Event) {
         fmt.Printf("Job %s completed in %v\n", data.JobID, data.Duration)
     case worker.EventJobFailed:
         data := event.Data.(worker.JobFailedData)
-        fmt.Printf("Job %s failed: %v\n", data.JobID, data.Error)
+        fmt.Printf("Job %s failed: %v (will retry: %t)\n", data.JobID, data.Error, data.WillRetry)
+    case worker.EventJobLeaseLost:
+        data := event.Data.(worker.JobLeaseLostData)
+        fmt.Printf("Job %s lost lease %s during %s: %v\n", data.JobID, data.LeaseID, data.Operation, data.Error)
     }
 })
 
+// The worker automatically echoes the claim's LeaseID on heartbeat and settlement.
+// A stale lease cancels that handler context and emits EventJobLeaseLost.
 ctx := context.Background()
 w.Start(ctx)
 
@@ -462,6 +467,14 @@ jobs, err := client.Dequeue(ctx, &grpc.DequeueRequest{
     WorkerID:  "worker-1",
     BatchSize: 10,
 })
+
+// Echo each dequeued job's LeaseID on settlement so stale executions are fenced.
+for _, job := range jobs.Jobs {
+    // Process job...
+    err = client.Complete(ctx, &grpc.CompleteRequest{
+        JobID: job.ID, WorkerID: "worker-1", LeaseID: job.LeaseID,
+    })
+}
 
 // Stream jobs (server-side streaming)
 stream, err := client.StreamJobs(ctx, "high-throughput", "worker-1")
@@ -619,7 +632,7 @@ go run scripts/test-local/main.go
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](https://github.com/spooled-cloud/spooled-backend/blob/main/CONTRIBUTING.md).
+Contributions are welcome! Please see this repository's [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

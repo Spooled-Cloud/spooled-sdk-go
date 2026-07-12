@@ -56,14 +56,18 @@ spooled-sdk-go/
 ### Running Tests
 
 ```bash
-# Run all tests
-go test ./...
+# Match the CI test command
+go test -v -race -coverprofile=coverage.out -coverpkg=./spooled/...,./internal/... ./...
 
-# Run tests with race detection
-go test -race ./...
+# Build all packages and examples
+go build -v ./...
+for dir in examples/*/; do (cd "$dir" && go build -v .); done
 
-# Run tests with coverage
-go test -cover ./...
+# Run the repository linter
+golangci-lint run ./...
+
+# Optional local equivalent of CI's non-blocking security scan
+gosec ./...
 
 # Run specific package tests
 go test ./spooled/...
@@ -76,9 +80,9 @@ API_KEY=sp_test_... BASE_URL=http://localhost:8080 go run scripts/test-local/mai
 
 We follow standard Go conventions:
 
-- Run `go fmt` before committing
-- Run `go vet` to check for issues
-- Use `golint` or `staticcheck` for additional linting
+- Run `go fmt ./...` (and `goimports -w .`, as used by `make fmt`) before committing
+- Run `go vet ./...` to check for issues
+- Run `golangci-lint run ./...`, matching CI
 - Follow [Effective Go](https://golang.org/doc/effective_go) guidelines
 - Keep functions focused and well-documented
 
@@ -144,9 +148,11 @@ docs(readme): update installation instructions
 
 ### PR Checklist
 
-- [ ] Tests pass (`go test ./...`)
-- [ ] No race conditions (`go test -race ./...`)
-- [ ] Code is formatted (`go fmt ./...`)
+- [ ] CI-equivalent tests pass (`go test -v -race -coverprofile=coverage.out -coverpkg=./spooled/...,./internal/... ./...`)
+- [ ] Packages and examples build
+- [ ] `golangci-lint run ./...` passes
+- [ ] Security-sensitive changes were checked with `gosec ./...` (CI uploads a non-blocking SARIF report)
+- [ ] Code is formatted (`go fmt ./...`; `goimports -w .` when available)
 - [ ] No vet warnings (`go vet ./...`)
 - [ ] Documentation updated
 - [ ] CHANGELOG.md updated
@@ -156,11 +162,12 @@ docs(readme): update installation instructions
 
 Releases are managed by maintainers. The process:
 
-1. Update version in `internal/version/version.go`
-2. Update CHANGELOG.md with release date
-3. Create a git tag: `git tag v1.x.x`
-4. Push tag: `git push origin v1.x.x`
-5. GitHub Actions will create the release
+1. Update `internal/version/version.go` and `CHANGELOG.md`, then ensure the version references and release notes agree.
+2. Run the CI-equivalent tests, linter, package build, and example builds above.
+3. Create and push an annotated or lightweight `v1.x.x` tag.
+4. The tag-triggered GitHub Actions workflow reruns `go test -v ./...`, extracts that version's `CHANGELOG.md` section, creates the GitHub release, and requests the version from pkg.go.dev.
+
+The workflow does not verify that the tag matches `internal/version.Version`, so maintainers must check that consistency before tagging.
 
 ## Getting Help
 

@@ -72,7 +72,7 @@ client, err := spooled.NewClient(
 
 The SDK includes several security features:
 
-- **TLS by default**: All connections use TLS encryption
-- **Automatic token refresh**: JWT tokens are refreshed automatically
-- **Request signing**: API requests are authenticated per-request
-- **No credential logging**: Credentials are never logged
+- **Secure cloud defaults**: REST, WebSocket, SSE, and gRPC cloud endpoints use HTTPS/WSS/TLS by default; explicitly configured local/self-hosted endpoints may use plaintext
+- **Automatic token refresh**: Refresh-token clients renew JWTs automatically, and realtime API-key clients cache and refresh their exchanged JWT near expiry
+- **Authenticated requests**: REST/gRPC requests use API-key or bearer-token authentication; this is not cryptographic request signing
+- **Credential-safe logging**: Built-in debug output redacts authentication headers and realtime JWT query parameters
