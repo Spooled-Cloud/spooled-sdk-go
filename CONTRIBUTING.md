@@ -160,14 +160,27 @@ docs(readme): update installation instructions
 
 ## Release Process
 
-Releases are managed by maintainers. The process:
+Releases are managed by maintainers. This checklist records evidence without blocking ordinary commits, experiments, or cross-repository compatibility research. A mismatch between a Go module tag and this module's embedded runtime identity is a release error. Publishing a module is not a service deployment; consumers report new metadata only after upgrading and restarting or redeploying their applications.
 
-1. Update `internal/version/version.go` and `CHANGELOG.md`, then ensure the version references and release notes agree.
-2. Run the CI-equivalent tests, linter, package build, and example builds above.
-3. Create and push an annotated or lightweight `v1.x.x` tag.
-4. The tag-triggered GitHub Actions workflow reruns `go test -v ./...`, extracts that version's `CHANGELOG.md` section, creates the GitHub release, and requests the version from pkg.go.dev.
+Before pushing `vX.Y.Z`:
 
-The workflow does not verify that the tag matches `internal/version.Version`, so maintainers must check that consistency before tagging.
+- [ ] Set `internal/version.Version` to `X.Y.Z`; User-Agent helpers must continue deriving from it.
+- [ ] Confirm both high-level `spooled.SpooledWorker` and low-level `spooled/worker.Worker` default registration versions derive from `internal/version.Version`.
+- [ ] Add an exact `## [X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md` in descending release order.
+- [ ] Review direct REST/gRPC registration examples so the top-level worker version is not confused with arbitrary metadata.
+- [ ] Regenerate OpenAPI/protobuf code when its inputs change and record the proto commit/digest plus generator versions.
+- [ ] Confirm no executable, coverage file, credential, or machine-specific build artifact is tracked or included in the module.
+- [ ] Run the CI-equivalent race/coverage tests, `go vet ./...`, `golangci-lint run ./...`, `go build ./...`, and example builds.
+- [ ] Record intentional dependency or cross-repository divergence with an owner, reason, evidence, review date, and exit condition; component versions need not match numerically.
+
+Publish and verify:
+
+- [ ] Create one immutable SemVer tag `vX.Y.Z` on the reviewed commit and never move or recreate it. If externally visible content is wrong, fix forward with a patch version and retract the bad version when appropriate.
+- [ ] Record the tag commit and release workflow URL; the workflow validates strict SemVer, runtime version, and changelog identity before creating the GitHub Release.
+- [ ] Verify `proxy.golang.org/.../@v/vX.Y.Z.info` identifies the intended commit and inspect the proxy `.mod` and module zip.
+- [ ] Confirm the module zip contains the intended `internal/version.Version` and both worker default paths, with no local binaries or other unintended artifacts.
+- [ ] Confirm `sum.golang.org` records the version and pkg.go.dev indexes it.
+- [ ] Record module publication separately from consumer rollout, backend deployment, or documentation deployment.
 
 ## Getting Help
 

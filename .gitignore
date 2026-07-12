@@ -8,6 +8,10 @@
 *.so
 *.dylib
 
+# Root-level local builds (previously tracked and accidentally distributed in module zips)
+/main
+/test-local
+
 # Test binary, built with `go test -c`
 *.test
 

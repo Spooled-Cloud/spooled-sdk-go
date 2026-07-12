@@ -2,9 +2,9 @@ module github.com/spooled-cloud/spooled-sdk-go
 
 go 1.25.0
 
-// v1.0.10 was published with a transient commit that diverges from the
-// final tagged commit on GitHub. The proxy.golang.org module is locked
-// to that earlier commit and cannot be updated. Use v1.0.11 instead.
+// v1.0.10 had release activity on more than one tag target, making its
+// provenance ambiguous after the pushed tag was moved. Keep it retracted and
+// use v1.0.11 or newer; never move an externally visible module tag.
 retract v1.0.10
 
 require (

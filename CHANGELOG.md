@@ -5,6 +5,16 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.21] - 2026-07-12
+
+### Fixed
+
+- Removed two stale macOS executables that were tracked at the repository root and therefore distributed inside Go module archives.
+- Added ignore rules preventing those local build outputs from being recommitted.
+- Added release identity validation for strict SemVer tags, the embedded SDK version, and dated changelog entries.
+- Expanded maintainer release guidance with runtime/User-Agent, both worker paths, proxy, checksum, and module-archive verification.
+- Clarified the `v1.0.10` retraction as tag-mutation provenance ambiguity rather than asserting a currently observable proxy-content mismatch.
+
 ## [1.0.20] - 2026-07-12
 
 ### Fixed
@@ -277,8 +287,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Retracted
 
-- v1.0.10 — proxy.golang.org locked the version to a transient commit
-  during the release dance; the canonical content lives in v1.0.11
+- v1.0.10 — release activity occurred on more than one tag target, making
+  provenance ambiguous after the externally visible tag was moved; use v1.0.11+
 
 ## [1.0.10] - 2026-05-05 [RETRACTED]
 
@@ -328,6 +338,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced metrics integration
 - OpenTelemetry tracing support
 
+[1.0.21]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.21
 [1.0.20]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.20
 [1.0.19]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.19
 [1.0.18]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.18
@@ -347,4 +358,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [1.0.3]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.3
 [1.0.2]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.2
 [1.0.0]: https://github.com/spooled-cloud/spooled-sdk-go/releases/tag/v1.0.0
-[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.20...HEAD
+[Unreleased]: https://github.com/spooled-cloud/spooled-sdk-go/compare/v1.0.21...HEAD
