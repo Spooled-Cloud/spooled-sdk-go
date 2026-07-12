@@ -2,24 +2,33 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/resources"
 )
 
 // activeJob tracks an in-progress job.
 type activeJob struct {
-	jobID     string
-	ctx       context.Context
-	cancel    context.CancelFunc
-	startTime time.Time
-	heartbeat *time.Ticker
-	// leaseID is the lease fencing token captured at claim time; echoed on
-	// complete/fail/heartbeat so stale leases are rejected by the server.
+	jobID      string
+	queueName  string
+	workerID   string
+	retryCount int
+	maxRetries int
+	ctx        context.Context
+	cancel     context.CancelFunc
+	startTime  time.Time
+	heartbeat  *time.Ticker
+	leaseLost  atomic.Bool
+	// leaseID is the immutable lease fencing token captured at claim time; it
+	// must never be looked up again by job ID because a later execution of the
+	// same job may already hold a different lease.
 	leaseID *string
 }
 
@@ -337,12 +346,19 @@ func (w *Worker) processJob(job resources.ClaimedJob) {
 
 	// Create job context
 	jobCtx, jobCancel := context.WithCancel(w.ctx)
+	w.mu.RLock()
+	workerID := w.workerID
+	w.mu.RUnlock()
 	aj := &activeJob{
-		jobID:     job.ID,
-		ctx:       jobCtx,
-		cancel:    jobCancel,
-		startTime: time.Now(),
-		leaseID:   job.LeaseID,
+		jobID:      job.ID,
+		queueName:  job.QueueName,
+		workerID:   workerID,
+		retryCount: job.RetryCount,
+		maxRetries: job.MaxRetries,
+		ctx:        jobCtx,
+		cancel:     jobCancel,
+		startTime:  time.Now(),
+		leaseID:    job.LeaseID,
 	}
 
 	w.activeJobs.Store(job.ID, aj)
@@ -357,7 +373,7 @@ func (w *Worker) processJob(job resources.ClaimedJob) {
 	go func() {
 		defer w.wg.Done()
 		defer func() {
-			w.activeJobs.Delete(job.ID)
+			w.activeJobs.CompareAndDelete(job.ID, aj)
 			w.jobCount.Add(-1)
 			jobCancel()
 			if aj.heartbeat != nil {
@@ -379,7 +395,7 @@ func (w *Worker) processJob(job resources.ClaimedJob) {
 			Payload:    job.Payload,
 			RetryCount: job.RetryCount,
 			MaxRetries: job.MaxRetries,
-			workerID:   w.workerID,
+			workerID:   aj.workerID,
 			worker:     w,
 			Progress: func(percent float64, message string) error {
 				return w.updateProgress(job.ID, percent, message)
@@ -397,81 +413,90 @@ func (w *Worker) processJob(job resources.ClaimedJob) {
 		result, err := handler(jctx)
 		duration := time.Since(aj.startTime)
 
+		// A lease-expired heartbeat already canceled and signaled this exact
+		// execution. Never settle it afterward: doing so would make a stale
+		// complete/fail request and could emit a duplicate lease-loss event.
+		if aj.leaseLost.Load() {
+			return
+		}
+
 		if err != nil {
 			// Job failed
-			w.failJob(job.ID, err, duration)
+			w.failJob(aj, err, duration)
 		} else {
 			// Job completed
-			w.completeJob(job.ID, result, duration)
+			w.completeJob(aj, result, duration)
 		}
 	}()
 }
 
-// leaseIDFor returns the lease fencing token captured when jobID was claimed,
-// or nil if the job is no longer tracked (or was claimed without a token).
-func (w *Worker) leaseIDFor(jobID string) *string {
-	if value, ok := w.activeJobs.Load(jobID); ok {
-		return value.(*activeJob).leaseID
+func (w *Worker) completeJob(aj *activeJob, result map[string]any, duration time.Duration) {
+	if aj.leaseLost.Load() {
+		return
 	}
-	return nil
-}
 
-func (w *Worker) completeJob(jobID string, result map[string]any, duration time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	w.mu.RLock()
-	workerID := w.workerID
-	w.mu.RUnlock()
-
-	if err := w.jobs.Complete(ctx, jobID, &resources.CompleteJobRequest{
-		WorkerID: workerID,
+	if err := w.jobs.Complete(ctx, aj.jobID, &resources.CompleteJobRequest{
+		WorkerID: aj.workerID,
 		Result:   result,
-		LeaseID:  w.leaseIDFor(jobID),
+		LeaseID:  aj.leaseID,
 	}); err != nil {
-		w.log("Failed to complete job %s: %v", jobID, err)
+		w.handleExecutionError(aj, "complete", err)
+		return
 	}
 
 	w.emit(Event{
 		Type:      EventJobCompleted,
 		Timestamp: time.Now(),
 		Data: JobCompletedData{
-			JobID:    jobID,
-			Result:   result,
-			Duration: duration,
+			JobID:     aj.jobID,
+			QueueName: aj.queueName,
+			Result:    result,
+			Duration:  duration,
 		},
 	})
 
-	w.log("Job completed: id=%s duration=%v", jobID, duration)
+	w.log("Job completed: id=%s duration=%v", aj.jobID, duration)
 }
 
-func (w *Worker) failJob(jobID string, jobErr error, duration time.Duration) {
+func (w *Worker) failJob(aj *activeJob, jobErr error, duration time.Duration) {
+	if aj.leaseLost.Load() {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	w.mu.RLock()
-	workerID := w.workerID
-	w.mu.RUnlock()
-
-	if err := w.jobs.Fail(ctx, jobID, &resources.FailJobRequest{
-		WorkerID: workerID,
+	response, err := w.jobs.FailWithResponse(ctx, aj.jobID, &resources.FailJobRequest{
+		WorkerID: aj.workerID,
 		Error:    jobErr.Error(),
-		LeaseID:  w.leaseIDFor(jobID),
-	}); err != nil {
-		w.log("Failed to fail job %s: %v", jobID, err)
+		LeaseID:  aj.leaseID,
+	})
+	if err != nil {
+		w.handleExecutionError(aj, "fail", err)
+		return
+	}
+
+	willRetry := aj.retryCount < aj.maxRetries
+	if response.WillRetry != nil {
+		willRetry = *response.WillRetry
 	}
 
 	w.emit(Event{
 		Type:      EventJobFailed,
 		Timestamp: time.Now(),
 		Data: JobFailedData{
-			JobID:    jobID,
-			Error:    jobErr,
-			Duration: duration,
+			JobID:     aj.jobID,
+			QueueName: aj.queueName,
+			Error:     jobErr,
+			Duration:  duration,
+			WillRetry: willRetry,
 		},
 	})
 
-	w.log("Job failed: id=%s error=%v duration=%v", jobID, jobErr, duration)
+	w.log("Job failed: id=%s error=%v duration=%v", aj.jobID, jobErr, duration)
 }
 
 func (w *Worker) updateProgress(jobID string, percent float64, message string) error {
@@ -504,32 +529,79 @@ func (w *Worker) jobHeartbeatLoop(aj *activeJob) {
 		case <-aj.ctx.Done():
 			return
 		case <-aj.heartbeat.C:
-			w.renewJobLease(aj.jobID)
+			if !w.renewJobLease(aj) {
+				return
+			}
 		}
 	}
 }
 
-func (w *Worker) renewJobLease(jobID string) {
-	ctx, cancel := context.WithTimeout(w.ctx, 5*time.Second)
+func (w *Worker) renewJobLease(aj *activeJob) bool {
+	ctx, cancel := context.WithTimeout(aj.ctx, 5*time.Second)
 	defer cancel()
 
-	w.mu.RLock()
-	workerID := w.workerID
-	w.mu.RUnlock()
-
-	if _, err := w.jobs.RenewLease(ctx, jobID, &resources.RenewLeaseRequest{
-		WorkerID:         workerID,
+	if _, err := w.jobs.RenewLease(ctx, aj.jobID, &resources.RenewLeaseRequest{
+		WorkerID:         aj.workerID,
 		LeaseDurationSec: w.opts.LeaseDuration,
-		LeaseID:          w.leaseIDFor(jobID),
+		LeaseID:          aj.leaseID,
 	}); err != nil {
-		w.log("Failed to renew lease for job %s: %v", jobID, err)
-	} else {
-		w.emit(Event{
-			Type:      EventJobHeartbeat,
-			Timestamp: time.Now(),
-			Data:      map[string]string{"job_id": jobID},
-		})
+		w.handleExecutionError(aj, "renew lease", err)
+		return !isLeaseExpired(err)
 	}
+
+	w.emit(Event{
+		Type:      EventJobHeartbeat,
+		Timestamp: time.Now(),
+		Data:      map[string]string{"job_id": aj.jobID},
+	})
+	return true
+}
+
+func (w *Worker) handleExecutionError(aj *activeJob, operation string, err error) {
+	w.log("Failed to %s for job %s: %v", operation, aj.jobID, err)
+	if isLeaseExpired(err) {
+		if !aj.leaseLost.CompareAndSwap(false, true) {
+			return
+		}
+		if aj.cancel != nil {
+			aj.cancel()
+		}
+		if aj.heartbeat != nil {
+			aj.heartbeat.Stop()
+		}
+		w.emit(Event{
+			Type:      EventJobLeaseLost,
+			Timestamp: time.Now(),
+			Data: JobLeaseLostData{
+				JobID:     aj.jobID,
+				QueueName: aj.queueName,
+				LeaseID:   leaseIDValue(aj.leaseID),
+				Operation: operation,
+				Error:     err,
+			},
+		})
+		return
+	}
+
+	w.emit(Event{
+		Type:      EventWorkerError,
+		Timestamp: time.Now(),
+		Data: WorkerErrorData{
+			Error: fmt.Errorf("failed to %s job %s: %w", operation, aj.jobID, err),
+		},
+	})
+}
+
+func isLeaseExpired(err error) bool {
+	var apiErr *httpx.APIError
+	return errors.As(err, &apiErr) && strings.EqualFold(apiErr.Code, "LEASE_EXPIRED")
+}
+
+func leaseIDValue(leaseID *string) string {
+	if leaseID == nil {
+		return ""
+	}
+	return *leaseID
 }
 
 func (w *Worker) workerHeartbeatLoop() {

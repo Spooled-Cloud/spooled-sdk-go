@@ -344,9 +344,29 @@ type FailJobRequest struct {
 	LeaseID *string `json:"lease_id,omitempty"`
 }
 
+// FailJobResponse is returned after the backend accepts a job failure.
+type FailJobResponse struct {
+	Success bool `json:"success"`
+	// WillRetry is nil when an older backend omits retry disposition. Callers can
+	// then fall back to the retry state captured with the claimed job.
+	WillRetry         *bool `json:"will_retry,omitempty"`
+	NextRetryDelaySec *int  `json:"next_retry_delay_secs,omitempty"`
+}
+
 // Fail marks a job as failed.
 func (r *JobsResource) Fail(ctx context.Context, id string, req *FailJobRequest) error {
-	return r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/fail", id), req, nil)
+	_, err := r.FailWithResponse(ctx, id, req)
+	return err
+}
+
+// FailWithResponse marks a job as failed and returns the backend's retry
+// disposition when available.
+func (r *JobsResource) FailWithResponse(ctx context.Context, id string, req *FailJobRequest) (*FailJobResponse, error) {
+	var result FailJobResponse
+	if err := r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/fail", id), req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // HeartbeatRequest is the request for a job heartbeat.

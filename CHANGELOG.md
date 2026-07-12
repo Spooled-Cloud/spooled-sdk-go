@@ -5,6 +5,27 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.20] - 2026-07-12
+
+### Fixed
+
+- **Worker execution identity is immutable for the lifetime of each lease.**
+  Heartbeat, completion, failure, cancellation, and cleanup now use the exact
+  execution captured at claim time. An older execution of the same job cannot
+  borrow a replacement lease token or delete the replacement from active work.
+- **Lease expiry cancels handlers immediately.** A typed `LEASE_EXPIRED`
+  heartbeat response cancels that exact handler context, stops renewal, and
+  emits `job:lease_lost` with the rejected operation and lease identity.
+- **Settlement events reflect backend confirmation.** `job:completed` and
+  `job:failed` are emitted only after the backend accepts settlement. An
+  execution canceled by lease loss skips settlement after its handler returns,
+  avoiding stale requests and duplicate events. Rejected settlement emits
+  `job:lease_lost` for lease conflicts or `worker:error` for other errors, and
+  confirmed failure events populate `WillRetry` from the backend response or
+  claim-time retry state when that response field is unavailable.
+- Added same-job/two-lease ordering, stale-heartbeat cancellation, rejected
+  settlement, and in-process gRPC wire-field regression tests.
+
 ## [1.0.19] - 2026-07-11
 
 ### Added

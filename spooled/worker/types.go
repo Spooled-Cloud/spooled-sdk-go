@@ -102,6 +102,7 @@ const (
 	EventJobFailed       EventType = "job:failed"
 	EventJobProgress     EventType = "job:progress"
 	EventJobHeartbeat    EventType = "job:heartbeat"
+	EventJobLeaseLost    EventType = "job:lease_lost"
 	EventWorkerHeartbeat EventType = "worker:heartbeat"
 )
 
@@ -156,6 +157,16 @@ type JobFailedData struct {
 	Error     error
 	Duration  time.Duration
 	WillRetry bool
+}
+
+// JobLeaseLostData is emitted when the backend rejects an operation because
+// this execution no longer owns the job lease.
+type JobLeaseLostData struct {
+	JobID     string
+	QueueName string
+	LeaseID   string
+	Operation string
+	Error     error
 }
 
 // JobProgressData is emitted when job progress is updated.

@@ -158,6 +158,47 @@ func TestJobRequests_MarshalLeaseID(t *testing.T) {
 	}
 }
 
+func TestFailWithResponse_DecodesRetryDisposition(t *testing.T) {
+	tests := []struct {
+		name          string
+		body          string
+		wantWillRetry *bool
+	}{
+		{name: "present true", body: `{"success":true,"will_retry":true}`, wantWillRetry: boolPtr(true)},
+		{name: "present false", body: `{"success":true,"will_retry":false}`, wantWillRetry: boolPtr(false)},
+		{name: "omitted", body: `{"success":true}`, wantWillRetry: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			jobs := NewJobsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+			response, err := jobs.FailWithResponse(context.Background(), "job-1", &FailJobRequest{
+				WorkerID: "worker-1",
+				Error:    "boom",
+			})
+			if err != nil {
+				t.Fatalf("FailWithResponse failed: %v", err)
+			}
+			switch {
+			case tt.wantWillRetry == nil && response.WillRetry != nil:
+				t.Fatalf("WillRetry = %v, want nil", *response.WillRetry)
+			case tt.wantWillRetry != nil && response.WillRetry == nil:
+				t.Fatalf("WillRetry = nil, want %v", *tt.wantWillRetry)
+			case tt.wantWillRetry != nil && *response.WillRetry != *tt.wantWillRetry:
+				t.Fatalf("WillRetry = %v, want %v", *response.WillRetry, *tt.wantWillRetry)
+			}
+		})
+	}
+}
+
+func boolPtr(value bool) *bool { return &value }
+
 func TestRenewLease_ForwardsLeaseIDToHeartbeat(t *testing.T) {
 	// RenewLease is implemented over the heartbeat endpoint; the fencing token
 	// must survive the internal RenewLeaseRequest -> HeartbeatRequest mapping.
