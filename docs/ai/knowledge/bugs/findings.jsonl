@@ -1,0 +1,1 @@
+{"id":"GS-01","sev":"P2","summary":"gRPC enqueue zero defaults on unset int32","path":"spooled/grpc/client.go","lines":"141-149","status":"open"}
