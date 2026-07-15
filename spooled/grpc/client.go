@@ -121,6 +121,8 @@ func (c *Client) withAuth(ctx context.Context) context.Context {
 // Queue Service Methods
 
 // EnqueueRequest is the request for enqueueing a job.
+// MaxRetries and TimeoutSeconds use proto3 zeros: leave as 0 to mean
+// "server QUEUE_DEFAULT_*" (backend maps <=0 to configured defaults).
 type EnqueueRequest struct {
 	QueueName      string
 	Payload        map[string]any
