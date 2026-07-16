@@ -33,6 +33,7 @@ type Worker struct {
 	ID             string         `json:"id"`
 	OrganizationID string         `json:"organization_id"`
 	QueueName      string         `json:"queue_name"`
+	QueueNames     []string       `json:"queue_names,omitempty"`
 	Hostname       string         `json:"hostname"`
 	WorkerType     *string        `json:"worker_type,omitempty"`
 	MaxConcurrency int            `json:"max_concurrency"`
@@ -42,13 +43,49 @@ type Worker struct {
 	Metadata       map[string]any `json:"metadata"`
 	Version        *string        `json:"version,omitempty"`
 	RegisteredAt   time.Time      `json:"registered_at"`
+	UpdatedAt      time.Time      `json:"updated_at,omitempty"`
 }
 
-// List retrieves all registered workers.
-func (r *WorkersResource) List(ctx context.Context) ([]Worker, error) {
-	var result []Worker
+// WorkerSummary represents the summary payload returned by the worker list endpoint.
+type WorkerSummary struct {
+	ID             string       `json:"id"`
+	QueueName      string       `json:"queue_name"`
+	Hostname       string       `json:"hostname"`
+	Status         WorkerStatus `json:"status"`
+	CurrentJobs    int          `json:"current_jobs"`
+	MaxConcurrency int          `json:"max_concurrency"`
+	LastHeartbeat  time.Time    `json:"last_heartbeat"`
+}
+
+// ListSummaries retrieves worker summaries.
+func (r *WorkersResource) ListSummaries(ctx context.Context) ([]WorkerSummary, error) {
+	var result []WorkerSummary
 	if err := r.base.Get(ctx, "/api/v1/workers", &result); err != nil {
 		return nil, err
+	}
+	return result, nil
+}
+
+// List retrieves worker summaries as legacy Worker values.
+//
+// Deprecated: use ListSummaries for the exact list response shape, or Get for full details.
+func (r *WorkersResource) List(ctx context.Context) ([]Worker, error) {
+	summaries, err := r.ListSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]Worker, 0, len(summaries))
+	for _, summary := range summaries {
+		result = append(result, Worker{
+			ID:             summary.ID,
+			QueueName:      summary.QueueName,
+			Hostname:       summary.Hostname,
+			Status:         summary.Status,
+			CurrentJobs:    summary.CurrentJobs,
+			MaxConcurrency: summary.MaxConcurrency,
+			LastHeartbeat:  summary.LastHeartbeat,
+		})
 	}
 	return result, nil
 }

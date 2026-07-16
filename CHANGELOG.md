@@ -5,6 +5,16 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added `Workers().ListSummaries()` for the worker list endpoint's summary response shape; legacy `List()` remains for compatibility.
+
+### Fixed
+
+- Worker detail decoding now covers `queue_names` and `updated_at`, matching the backend's stable public worker detail response.
+
 ## [1.0.21] - 2026-07-12
 
 ### Fixed
