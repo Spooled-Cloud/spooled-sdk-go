@@ -121,14 +121,19 @@ func (c *Client) withAuth(ctx context.Context) context.Context {
 // Queue Service Methods
 
 // EnqueueRequest is the request for enqueueing a job.
-// MaxRetries and TimeoutSeconds use proto3 zeros: leave as 0 to mean
-// "server QUEUE_DEFAULT_*" (backend maps <=0 to configured defaults).
+//
+// MaxRetries and TimeoutSeconds are optional pointers:
+//   - nil → field omitted on the wire; backend applies QUEUE_DEFAULT_*
+//   - non-nil → value sent (backend still maps <=0 to QUEUE_DEFAULT_*)
+//
+// Explicit zero retries cannot be expressed over gRPC proto3 int32 (same as
+// REST omit vs 0 distinction on the server).
 type EnqueueRequest struct {
 	QueueName      string
 	Payload        map[string]any
 	Priority       int32
-	MaxRetries     int32
-	TimeoutSeconds int32
+	MaxRetries     *int32
+	TimeoutSeconds *int32
 	ScheduledAt    *time.Time
 	IdempotencyKey string
 }
@@ -146,9 +151,13 @@ func (c *Client) Enqueue(ctx context.Context, req *EnqueueRequest) (*EnqueueResp
 	pbReq := &pb.EnqueueRequest{
 		QueueName:      req.QueueName,
 		Priority:       req.Priority,
-		MaxRetries:     req.MaxRetries,
-		TimeoutSeconds: req.TimeoutSeconds,
 		IdempotencyKey: req.IdempotencyKey,
+	}
+	if req.MaxRetries != nil {
+		pbReq.MaxRetries = *req.MaxRetries
+	}
+	if req.TimeoutSeconds != nil {
+		pbReq.TimeoutSeconds = *req.TimeoutSeconds
 	}
 
 	// Convert payload to protobuf Struct

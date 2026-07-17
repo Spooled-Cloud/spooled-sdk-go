@@ -47,6 +47,7 @@ func main() {
 	// Enqueue jobs
 	fmt.Println("\nEnqueuing jobs via gRPC...")
 	for i := 0; i < 5; i++ {
+		maxRetries := int32(3)
 		resp, err := client.Enqueue(ctx, &spooledgrpc.EnqueueRequest{
 			QueueName: queueName,
 			Payload: map[string]any{
@@ -54,7 +55,7 @@ func main() {
 				"timestamp": time.Now().Format(time.RFC3339),
 			},
 			Priority:   5,
-			MaxRetries: 3,
+			MaxRetries: &maxRetries,
 		})
 		if err != nil {
 			log.Printf("Failed to enqueue job %d: %v", i, err)

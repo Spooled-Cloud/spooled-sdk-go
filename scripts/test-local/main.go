@@ -1792,7 +1792,7 @@ func testGRPC(client *spooled.Client) {
 		enqResult, _ := grpcClient.Enqueue(context.Background(), &spooledgrpc.EnqueueRequest{
 			QueueName:  failQueue,
 			Payload:    map[string]any{"test": "fail"},
-			MaxRetries: 2,
+			MaxRetries: ptr(int32(2)),
 		})
 		jobID := enqResult.JobID
 
@@ -1846,7 +1846,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 			QueueName:  getJobQueue,
 			Payload:    map[string]any{"test": "getjob"},
 			Priority:   7,
-			MaxRetries: 5,
+			MaxRetries: ptr(int32(5)),
 		})
 
 		job, err := grpcClient.GetJob(context.Background(), enqResult.JobID)
@@ -2010,7 +2010,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 		enqResult, _ := grpcClient.Enqueue(context.Background(), &spooledgrpc.EnqueueRequest{
 			QueueName:  failDLQQueue,
 			Payload:    map[string]any{"test": "fail-dlq"},
-			MaxRetries: 0,
+			MaxRetries: ptr(int32(0)),
 		})
 
 		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
@@ -2043,7 +2043,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 		enqResult, _ := grpcClient.Enqueue(context.Background(), &spooledgrpc.EnqueueRequest{
 			QueueName:  failLongQueue,
 			Payload:    map[string]any{"test": "fail-long"},
-			MaxRetries: 0,
+			MaxRetries: ptr(int32(0)),
 		})
 
 		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{

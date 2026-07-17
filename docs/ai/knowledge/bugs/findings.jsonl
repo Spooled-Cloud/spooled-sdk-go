@@ -1,2 +1,2 @@
-{"id":"GS-01","sev":"P2","summary":"gRPC enqueue zero defaults on unset int32","path":"spooled/grpc/client.go","lines":"141-149","status":"open"}
+{"id":"GS-01","sev":"P2","summary":"gRPC enqueue zero defaults on unset int32","path":"spooled/grpc/client.go","status":"fixed","note":"EnqueueRequest MaxRetries/TimeoutSeconds are *int32; nil omits field"}
 {"id":"GS-02","sev":"P2","summary":"worker list/detail shapes drifted from backend REST JSON","path":"spooled/resources/workers.go","status":"fixed","note":"Working tree adds WorkerSummary/ListSummaries and detail fields for queue_names/updated_at"}

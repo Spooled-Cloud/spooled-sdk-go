@@ -4,3 +4,4 @@
 - Worker list has a summary-specific `ListSummaries()` API; legacy `List()` maps summaries into `Worker` values for compatibility.
 - Full gRPC streams.
 - Zero-value gRPC fields are a footgun; document for callers.
+- gRPC enqueue: `MaxRetries`/`TimeoutSeconds` are `*int32` (nil = server defaults).

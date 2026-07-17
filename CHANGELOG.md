@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Worker detail decoding now covers `queue_names` and `updated_at`, matching the backend's stable public worker detail response.
+- gRPC `EnqueueRequest.MaxRetries` / `TimeoutSeconds` are now `*int32` so unset means omit-on-wire (server `QUEUE_DEFAULT_*`) instead of always sending proto3 zeros.
 
 ## [1.0.21] - 2026-07-12
 
