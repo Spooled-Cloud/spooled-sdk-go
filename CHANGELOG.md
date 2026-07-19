@@ -10,11 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added `Workers().ListSummaries()` for the worker list endpoint's summary response shape; legacy `List()` remains for compatibility.
+- Added `grpc.Int32()` helper for building the new pointer fields on `EnqueueRequest`.
+
+### Changed
+
+- **BREAKING (Go API):** gRPC `EnqueueRequest.MaxRetries` / `TimeoutSeconds` are now `*int32` so `nil` explicitly means "use server `QUEUE_DEFAULT_*`". This is a source-level clarity change only — plain proto3 `int32` zero values were never serialized, so wire bytes are unchanged, and an explicit `0` remains inexpressible over gRPC. Migration: replace `MaxRetries: 3` with `MaxRetries: grpc.Int32(3)`.
 
 ### Fixed
 
 - Worker detail decoding now covers `queue_names` and `updated_at`, matching the backend's stable public worker detail response.
-- gRPC `EnqueueRequest.MaxRetries` / `TimeoutSeconds` are now `*int32` so unset means omit-on-wire (server `QUEUE_DEFAULT_*`) instead of always sending proto3 zeros.
+- `Workers().Deregister()` now calls `POST /api/v1/workers/{id}/deregister` (the route the backend serves) instead of `DELETE /api/v1/workers/{id}`, which always returned 405 and left the worker registered.
 
 ## [1.0.21] - 2026-07-12
 

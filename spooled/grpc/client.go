@@ -138,6 +138,12 @@ type EnqueueRequest struct {
 	IdempotencyKey string
 }
 
+// Int32 returns a pointer to v, for the optional *int32 fields on
+// EnqueueRequest (e.g. MaxRetries: grpc.Int32(3)).
+func Int32(v int32) *int32 {
+	return &v
+}
+
 // EnqueueResponse is the response from enqueueing a job.
 type EnqueueResponse struct {
 	JobID   string

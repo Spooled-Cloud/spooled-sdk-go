@@ -43,7 +43,7 @@ type Worker struct {
 	Metadata       map[string]any `json:"metadata"`
 	Version        *string        `json:"version,omitempty"`
 	RegisteredAt   time.Time      `json:"registered_at"`
-	UpdatedAt      time.Time      `json:"updated_at,omitempty"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
 // WorkerSummary represents the summary payload returned by the worker list endpoint.
@@ -140,5 +140,5 @@ func (r *WorkersResource) Heartbeat(ctx context.Context, id string, req *WorkerH
 
 // Deregister removes a worker registration.
 func (r *WorkersResource) Deregister(ctx context.Context, id string) error {
-	return r.base.Delete(ctx, fmt.Sprintf("/api/v1/workers/%s", id))
+	return r.base.Post(ctx, fmt.Sprintf("/api/v1/workers/%s/deregister", id), nil, nil)
 }
