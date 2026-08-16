@@ -77,8 +77,12 @@ func main() {
 	fmt.Printf("  ID: %s\n", key.ID)
 	fmt.Printf("  Active: %v\n", key.IsActive)
 	fmt.Printf("  Created: %v\n", key.CreatedAt)
+	// last_used is written at most once per key per 5 minutes, so it lags real
+	// usage and is empty for a key that has only just been used.
 	if key.LastUsed != nil {
-		fmt.Printf("  Last used: %v\n", *key.LastUsed)
+		fmt.Printf("  Last used: %v (recorded at most once per 5 minutes)\n", *key.LastUsed)
+	} else {
+		fmt.Println("  Last used: not recorded yet (updated at most once per 5 minutes)")
 	}
 
 	// Update API key

@@ -5,6 +5,45 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Stable worker identity.** `worker.Options.WorkerID` and
+  `resources.RegisterWorkerRequest.WorkerID` carry the optional `worker_id`
+  (1-128 characters from `[A-Za-z0-9._-]`) that makes registration an upsert.
+  Pin it and a restarting worker reuses one row; leave it empty and the server
+  mints a UUID, so each restart leaves the old row against the plan worker cap
+  until the stale-worker reaper clears it (~2 minutes) — enough for a
+  crash-looping worker on a tight plan to 429 its own registrations.
+  Re-registering an ID the organization already owns is not charged against the
+  cap; an ID owned by another organization is rejected with 409.
+- **Clearing an outgoing webhook's signing secret.**
+  `UpdateOutgoingWebhookRequest.ClearSecret` sends the explicit `"secret": null`
+  that removes the secret; deliveries then go out unsigned with no
+  `X-Spooled-Signature` header. A nil `Secret` is still omitted from the body
+  and keeps the current secret, and setting `Secret` together with
+  `ClearSecret` is rejected before the request is sent.
+
+### Changed
+
+- `OutgoingWebhook.LastStatus` documents its third value, `"auto_disabled"`,
+  set when 20 consecutive failed deliveries make the server disable the webhook
+  and stop sending it events. Re-enable with
+  `Update(..., &UpdateOutgoingWebhookRequest{Enabled: ptr(true)})`, which is
+  charged against the plan webhook cap and can fail with 429 `QUOTA_EXCEEDED`.
+- `OutgoingWebhook.FailureCount` counts consecutive failed *deliveries* rather
+  than retry attempts, so it is roughly 5x smaller than a per-attempt count for
+  the same real-world failures — recheck any threshold built on it. A
+  successful delivery resets it to 0, including a successful manual retry.
+- `Webhooks().Deliveries()` documents that history is retained, not permanent:
+  only the newest 100 deliveries per webhook are readable and rows are removed
+  once past the plan's history window (free 1 day, starter 7, pro 30,
+  enterprise 90).
+- `APIKey.LastUsed` documents that the server records it at most once per key
+  per 5 minutes, so it lags real usage and must not be read as a live timestamp.
+- Regenerated `internal/openapi` types from the current backend OpenAPI spec.
+
 ## [1.1.0] - 2026-07-19
 
 ### Added

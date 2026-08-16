@@ -129,7 +129,16 @@ func (w *Worker) Start(ctx context.Context) error {
 		metadata[k] = v
 	}
 
+	// Only send worker_id when the caller pinned one. Sending it makes
+	// registration an upsert, so a restarting worker reuses its existing row
+	// instead of leaving a stale one against the plan worker cap.
+	var workerIDPtr *string
+	if w.opts.WorkerID != "" {
+		workerIDPtr = &w.opts.WorkerID
+	}
+
 	resp, err := w.workers.Register(ctx, &resources.RegisterWorkerRequest{
+		WorkerID:       workerIDPtr,
 		QueueName:      w.opts.QueueName,
 		Hostname:       w.opts.Hostname,
 		MaxConcurrency: &concurrency,

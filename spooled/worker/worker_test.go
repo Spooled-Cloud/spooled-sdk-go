@@ -460,3 +460,69 @@ func TestWorker_SettlementEventsRequireBackendConfirmation(t *testing.T) {
 		})
 	}
 }
+
+// TestWorker_RegistersWithStableWorkerID verifies that Options.WorkerID reaches
+// POST /api/v1/workers/register as worker_id so restarts upsert one row, and
+// that leaving it empty omits the field entirely (server mints a UUID).
+func TestWorker_RegistersWithStableWorkerID(t *testing.T) {
+	tests := []struct {
+		name     string
+		workerID string
+		want     any // nil means the field must be absent
+	}{
+		{name: "stable id is sent", workerID: "pod-7.worker_a-1", want: "pod-7.worker_a-1"},
+		{name: "empty id is omitted", workerID: "", want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var mu sync.Mutex
+			var registration map[string]any
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v1/workers/register":
+					decoded := map[string]any{}
+					_ = json.Unmarshal(body, &decoded)
+					mu.Lock()
+					registration = decoded
+					mu.Unlock()
+					_, _ = w.Write([]byte(`{"id":"w-test","queue_name":"q","lease_duration_secs":30,"heartbeat_interval_secs":15}`))
+				case "/api/v1/jobs/claim":
+					_, _ = w.Write([]byte(`{"jobs":[]}`))
+				default:
+					_, _ = w.Write([]byte(`{}`))
+				}
+			}))
+			defer server.Close()
+
+			transport := httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"})
+			w := NewWorker(
+				resources.NewJobsResource(transport),
+				resources.NewWorkersResource(transport),
+				Options{QueueName: "q", WorkerID: tt.workerID, LeaseDuration: 30},
+			)
+			w.Process(func(*JobContext) (map[string]any, error) { return nil, nil })
+
+			if err := w.Start(context.Background()); err != nil {
+				t.Fatalf("Start failed: %v", err)
+			}
+			defer func() { _ = w.Stop() }()
+
+			mu.Lock()
+			defer mu.Unlock()
+			got, ok := registration["worker_id"]
+			if tt.want == nil {
+				if ok {
+					t.Errorf("worker_id = %v, want the field to be absent", got)
+				}
+				return
+			}
+			if got != tt.want {
+				t.Errorf("worker_id = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

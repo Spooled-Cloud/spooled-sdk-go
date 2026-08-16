@@ -15,6 +15,13 @@
 //		MaxRetries: types.Int(5),      // optional max retries
 //	}
 //
+// A nil pointer means the field is left out of the request body entirely, so
+// the server keeps whatever value it already has. Where the API distinguishes
+// "leave alone" from "clear this" - the outgoing webhook signing secret is the
+// one such field - the type carries an explicit companion flag, because a nil
+// pointer alone cannot express an explicit JSON null. See
+// types.UpdateOutgoingWebhookRequest.ClearSecret.
+//
 // # Enums
 //
 // Enums are represented as string type aliases with constants for known values:

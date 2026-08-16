@@ -132,8 +132,9 @@ const (
 
 // Defines values for OutgoingWebhookLastStatus.
 const (
-	OutgoingWebhookLastStatusFailed  OutgoingWebhookLastStatus = "failed"
-	OutgoingWebhookLastStatusSuccess OutgoingWebhookLastStatus = "success"
+	OutgoingWebhookLastStatusAutoDisabled OutgoingWebhookLastStatus = "auto_disabled"
+	OutgoingWebhookLastStatusFailed       OutgoingWebhookLastStatus = "failed"
+	OutgoingWebhookLastStatusSuccess      OutgoingWebhookLastStatus = "success"
 )
 
 // Defines values for OutgoingWebhookDeliveryStatus.
@@ -145,17 +146,17 @@ const (
 
 // Defines values for RealtimeEventType.
 const (
-	RealtimeEventTypeError              RealtimeEventType = "error"
-	RealtimeEventTypeJobCompleted       RealtimeEventType = "job.completed"
-	RealtimeEventTypeJobCreated         RealtimeEventType = "job.created"
-	RealtimeEventTypeJobFailed          RealtimeEventType = "job.failed"
-	RealtimeEventTypeJobStatus          RealtimeEventType = "job.status"
-	RealtimeEventTypePing               RealtimeEventType = "ping"
-	RealtimeEventTypeQueueStats         RealtimeEventType = "queue.stats"
-	RealtimeEventTypeSystemHealth       RealtimeEventType = "system.health"
-	RealtimeEventTypeWorkerDeregistered RealtimeEventType = "worker.deregistered"
-	RealtimeEventTypeWorkerHeartbeat    RealtimeEventType = "worker.heartbeat"
-	RealtimeEventTypeWorkerRegistered   RealtimeEventType = "worker.registered"
+	RealtimeEventTypeError              RealtimeEventType = "Error"
+	RealtimeEventTypeJobCompleted       RealtimeEventType = "JobCompleted"
+	RealtimeEventTypeJobCreated         RealtimeEventType = "JobCreated"
+	RealtimeEventTypeJobFailed          RealtimeEventType = "JobFailed"
+	RealtimeEventTypeJobStatusChange    RealtimeEventType = "JobStatusChange"
+	RealtimeEventTypePing               RealtimeEventType = "Ping"
+	RealtimeEventTypeQueueStats         RealtimeEventType = "QueueStats"
+	RealtimeEventTypeSystemHealth       RealtimeEventType = "SystemHealth"
+	RealtimeEventTypeWorkerDeregistered RealtimeEventType = "WorkerDeregistered"
+	RealtimeEventTypeWorkerHeartbeat    RealtimeEventType = "WorkerHeartbeat"
+	RealtimeEventTypeWorkerRegistered   RealtimeEventType = "WorkerRegistered"
 )
 
 // Defines values for RefreshTokenResponseTokenType.
@@ -496,7 +497,7 @@ type ClaimJobsRequest struct {
 	QueueName string `json:"queue_name"`
 
 	// WorkerId Worker identifier (for tracking)
-	WorkerId *string `json:"worker_id,omitempty"`
+	WorkerId string `json:"worker_id"`
 }
 
 // ClaimJobsResponse defines model for ClaimJobsResponse.
@@ -506,23 +507,26 @@ type ClaimJobsResponse struct {
 
 // ClaimedJob defines model for ClaimedJob.
 type ClaimedJob struct {
-	CreatedAt      *time.Time             `json:"created_at,omitempty"`
-	Id             string                 `json:"id"`
-	LeaseExpiresAt time.Time              `json:"lease_expires_at"`
-	MaxRetries     *int                   `json:"max_retries,omitempty"`
+	Id             string    `json:"id"`
+	LeaseExpiresAt time.Time `json:"lease_expires_at"`
+
+	// LeaseId Fencing token for this lease. Echo it back in complete/fail/heartbeat so the operation applies only to the lease this worker actually holds.
+	LeaseId        string                 `json:"lease_id"`
+	MaxRetries     int                    `json:"max_retries"`
 	Payload        map[string]interface{} `json:"payload"`
-	Priority       *int                   `json:"priority,omitempty"`
 	QueueName      string                 `json:"queue_name"`
-	RetryCount     *int                   `json:"retry_count,omitempty"`
-	Status         string                 `json:"status"`
-	TimeoutSeconds *int                   `json:"timeout_seconds,omitempty"`
+	RetryCount     int                    `json:"retry_count"`
+	TimeoutSeconds int                    `json:"timeout_seconds"`
 }
 
 // CompleteJobRequest defines model for CompleteJobRequest.
 type CompleteJobRequest struct {
+	// LeaseId Required lease fencing token from the claim response. Completion succeeds only if it matches the job's current lease (409 LEASE_EXPIRED otherwise).
+	LeaseId string `json:"lease_id"`
+
 	// Result Optional result data to store with the job
 	Result   *map[string]interface{} `json:"result,omitempty"`
-	WorkerId *string                 `json:"worker_id,omitempty"`
+	WorkerId string                  `json:"worker_id"`
 }
 
 // CompleteSignupRequest defines model for CompleteSignupRequest.
@@ -568,17 +572,20 @@ type CreateApiKeyResponse struct {
 
 // CreateJobRequest defines model for CreateJobRequest.
 type CreateJobRequest struct {
-	CompletionWebhook *string                 `json:"completion_webhook,omitempty"`
-	ExpiresAt         *time.Time              `json:"expires_at,omitempty"`
-	IdempotencyKey    *string                 `json:"idempotency_key,omitempty"`
-	MaxRetries        *int                    `json:"max_retries,omitempty"`
-	ParentJobId       *string                 `json:"parent_job_id,omitempty"`
-	Payload           map[string]interface{}  `json:"payload"`
-	Priority          *int                    `json:"priority,omitempty"`
-	QueueName         string                  `json:"queue_name"`
-	ScheduledAt       *time.Time              `json:"scheduled_at,omitempty"`
-	Tags              *map[string]interface{} `json:"tags,omitempty"`
-	TimeoutSeconds    *int                    `json:"timeout_seconds,omitempty"`
+	CompletionWebhook *string `json:"completion_webhook,omitempty"`
+
+	// CompletionWebhookSecret Optional shared secret used to sign completion webhook callbacks.
+	CompletionWebhookSecret *string                 `json:"completion_webhook_secret,omitempty"`
+	ExpiresAt               *time.Time              `json:"expires_at,omitempty"`
+	IdempotencyKey          *string                 `json:"idempotency_key,omitempty"`
+	MaxRetries              *int                    `json:"max_retries,omitempty"`
+	ParentJobId             *string                 `json:"parent_job_id,omitempty"`
+	Payload                 map[string]interface{}  `json:"payload"`
+	Priority                *int                    `json:"priority,omitempty"`
+	QueueName               string                  `json:"queue_name"`
+	ScheduledAt             *time.Time              `json:"scheduled_at,omitempty"`
+	Tags                    *map[string]interface{} `json:"tags,omitempty"`
+	TimeoutSeconds          *int                    `json:"timeout_seconds,omitempty"`
 }
 
 // CreateJobResponse defines model for CreateJobResponse.
@@ -624,7 +631,7 @@ type CreatePortalResponse struct {
 
 // CreateScheduleRequest defines model for CreateScheduleRequest.
 type CreateScheduleRequest struct {
-	// CronExpression 6-field cron expression
+	// CronExpression Cron expression (5-field, or 6-field with leading seconds)
 	CronExpression  string                  `json:"cron_expression"`
 	Description     *string                 `json:"description,omitempty"`
 	MaxRetries      *int                    `json:"max_retries,omitempty"`
@@ -709,12 +716,12 @@ type ErrorResponse struct {
 
 // FailJobRequest defines model for FailJobRequest.
 type FailJobRequest struct {
-	// NoRetry Skip retries and go directly to DLQ
-	NoRetry *bool `json:"no_retry,omitempty"`
+	// Error Error message for the failed attempt
+	Error string `json:"error"`
 
-	// Reason Reason for failure
-	Reason   string  `json:"reason"`
-	WorkerId *string `json:"worker_id,omitempty"`
+	// LeaseId Required lease fencing token from the claim response. Failure succeeds only if it matches the job's current lease (409 LEASE_EXPIRED otherwise).
+	LeaseId  string `json:"lease_id"`
+	WorkerId string `json:"worker_id"`
 }
 
 // GenerateSlugRequest defines model for GenerateSlugRequest.
@@ -740,9 +747,12 @@ type HealthResponseStatus string
 
 // HeartbeatJobRequest defines model for HeartbeatJobRequest.
 type HeartbeatJobRequest struct {
-	// ExtensionSecs Extend lease by this many seconds
-	ExtensionSecs *int    `json:"extension_secs,omitempty"`
-	WorkerId      *string `json:"worker_id,omitempty"`
+	// LeaseDurationSecs New lease duration from now, in seconds
+	LeaseDurationSecs int `json:"lease_duration_secs"`
+
+	// LeaseId Required lease fencing token from the claim response. Renewal succeeds only if it matches the job's current lease (409 LEASE_EXPIRED otherwise).
+	LeaseId  string `json:"lease_id"`
+	WorkerId string `json:"worker_id"`
 }
 
 // Job defines model for Job.
@@ -1051,7 +1061,10 @@ type RegisterWorkerRequest struct {
 	Metadata       *map[string]interface{} `json:"metadata,omitempty"`
 	QueueName      string                  `json:"queue_name"`
 	Version        *string                 `json:"version,omitempty"`
-	WorkerType     *string                 `json:"worker_type,omitempty"`
+
+	// WorkerId Optional stable worker id. Supply the same value across restarts and registration upserts a single row, so a restarting worker reclaims its identity instead of leaving the old row to occupy the plan's worker cap until the stale-worker reaper clears it (about two minutes). Omit it and the server mints a UUID, which is the previous behaviour. An id already owned by a different organization is rejected with 409.
+	WorkerId   *string `json:"worker_id,omitempty"`
+	WorkerType *string `json:"worker_type,omitempty"`
 }
 
 // RegisterWorkerResponse defines model for RegisterWorkerResponse.
@@ -1098,7 +1111,7 @@ type RetryDlqResponse struct {
 type Schedule struct {
 	CreatedAt time.Time `json:"created_at"`
 
-	// CronExpression 6-field cron expression (second minute hour day month weekday)
+	// CronExpression Cron expression: 5-field (minute hour day month weekday) or 6-field (leading seconds). 5-field defaults seconds to 0.
 	CronExpression  string                  `json:"cron_expression"`
 	Description     *string                 `json:"description,omitempty"`
 	Id              string                  `json:"id"`
@@ -1199,8 +1212,10 @@ type UpdateOutgoingWebhookRequest struct {
 	Enabled *bool     `json:"enabled,omitempty"`
 	Events  *[]string `json:"events,omitempty"`
 	Name    *string   `json:"name,omitempty"`
-	Secret  *string   `json:"secret,omitempty"`
-	Url     *string   `json:"url,omitempty"`
+
+	// Secret Three-state. Omit the field to keep the current secret, send null to CLEAR it (deliveries then go out unsigned, with no X-Spooled-Signature header), or send a string to replace it. Note: clients that serialise unchanged fields as explicit null will clear the secret.
+	Secret *string `json:"secret"`
+	Url    *string `json:"url,omitempty"`
 }
 
 // UpdateScheduleRequest defines model for UpdateScheduleRequest.
@@ -1349,8 +1364,10 @@ type Worker struct {
 	Metadata       map[string]interface{} `json:"metadata"`
 	OrganizationId string                 `json:"organization_id"`
 	QueueName      string                 `json:"queue_name"`
+	QueueNames     []string               `json:"queue_names"`
 	RegisteredAt   time.Time              `json:"registered_at"`
 	Status         WorkerStatus           `json:"status"`
+	UpdatedAt      time.Time              `json:"updated_at"`
 	Version        *string                `json:"version,omitempty"`
 	WorkerType     *string                `json:"worker_type,omitempty"`
 }
@@ -1472,6 +1489,9 @@ type ListJobsParams struct {
 	// Status Filter by status
 	Status *ListJobsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 
+	// Tag Filter jobs by a single tag (matches Postgres `tags ? tag` semantics)
+	Tag *string `form:"tag,omitempty" json:"tag,omitempty"`
+
 	// Limit Maximum number of results
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 
@@ -1486,8 +1506,17 @@ type ListJobsParamsStatus string
 type ListDeadLetterQueueParams struct {
 	// QueueName Filter by queue name
 	QueueName *string `form:"queue_name,omitempty" json:"queue_name,omitempty"`
-	Limit     *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset    *int    `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Tag Filter jobs by a single tag (matches Postgres `tags ? tag` semantics)
+	Tag    *string `form:"tag,omitempty" json:"tag,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int    `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// GetJobStatsParams defines parameters for GetJobStats.
+type GetJobStatsParams struct {
+	// QueueName Optional queue filter (alias `queue` also accepted)
+	QueueName *string `form:"queue_name,omitempty" json:"queue_name,omitempty"`
 }
 
 // BatchJobStatusParams defines parameters for BatchJobStatus.
@@ -1527,9 +1556,8 @@ type GetScheduleHistoryParams struct {
 
 // CustomWebhookParams defines parameters for CustomWebhook.
 type CustomWebhookParams struct {
-	// XWebhookToken Webhook authentication token. Required if the organization has configured
-	// a `webhook_token` in their settings.
-	XWebhookToken *string `json:"X-Webhook-Token,omitempty"`
+	// XWebhookToken Webhook authentication token (required).
+	XWebhookToken string `json:"X-Webhook-Token"`
 }
 
 // ListWorkflowsParams defines parameters for ListWorkflows.

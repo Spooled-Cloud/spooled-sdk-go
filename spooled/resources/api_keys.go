@@ -20,16 +20,20 @@ func NewAPIKeysResource(transport *httpx.Transport) *APIKeysResource {
 
 // APIKey represents an API key.
 type APIKey struct {
-	ID             string     `json:"id"`
-	OrganizationID *string    `json:"organization_id,omitempty"`
-	Name           string     `json:"name"`
-	KeyPrefix      *string    `json:"key_prefix,omitempty"`
-	Queues         []string   `json:"queues,omitempty"`
-	RateLimit      *int       `json:"rate_limit,omitempty"`
-	IsActive       bool       `json:"is_active"`
-	CreatedAt      time.Time  `json:"created_at"`
-	LastUsed       *time.Time `json:"last_used,omitempty"`
-	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+	ID             string    `json:"id"`
+	OrganizationID *string   `json:"organization_id,omitempty"`
+	Name           string    `json:"name"`
+	KeyPrefix      *string   `json:"key_prefix,omitempty"`
+	Queues         []string  `json:"queues,omitempty"`
+	RateLimit      *int      `json:"rate_limit,omitempty"`
+	IsActive       bool      `json:"is_active"`
+	CreatedAt      time.Time `json:"created_at"`
+	// LastUsed is coarse: the server records it at most once per key per five
+	// minutes, not once per request, so it can trail real usage by that much
+	// and stays nil for a key first used moments ago. Do not treat it as a
+	// live timestamp or use it to confirm an individual request.
+	LastUsed  *time.Time `json:"last_used,omitempty"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // List retrieves all API keys.

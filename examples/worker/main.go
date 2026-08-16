@@ -60,9 +60,22 @@ func main() {
 	}
 	fmt.Printf("✓ Created 5 test jobs in queue: %s\n\n", queueName)
 
+	// Pin a stable worker identity so restarts reuse one worker row instead of
+	// leaving the old one against the plan worker cap for a couple of minutes.
+	// In production this is usually the pod, machine or container name.
+	workerID := os.Getenv("WORKER_ID")
+	if workerID == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			log.Fatalf("Failed to resolve hostname: %v", err)
+		}
+		workerID = fmt.Sprintf("worker-example-%s", hostname)
+	}
+
 	// Create worker
 	w := worker.NewWorker(client.Jobs(), client.Workers(), worker.Options{
 		QueueName:   queueName,
+		WorkerID:    workerID,
 		Concurrency: 3,
 		Debug:       true,
 	})

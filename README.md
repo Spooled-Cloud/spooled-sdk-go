@@ -282,6 +282,7 @@ Process jobs with the built-in worker runtime:
 ```go
 w := worker.NewWorker(client.Jobs(), client.Workers(), worker.Options{
     QueueName:         "my-queue",
+    WorkerID:          os.Getenv("HOSTNAME"), // Stable identity, see below
     Concurrency:       10,              // Max concurrent jobs
     PollInterval:      time.Second,     // Polling frequency
     LeaseDuration:     30,              // Lease duration in seconds
@@ -325,6 +326,16 @@ w.Start(ctx)
 // Graceful shutdown
 w.Stop()
 ```
+
+`WorkerID` is optional but worth setting. It must be 1-128 characters from
+`[A-Za-z0-9._-]`, and keeping it the same across restarts makes registration an
+upsert, so the process reclaims one worker row. Leave it empty and the server
+mints a fresh UUID on every `Start`, which leaves the previous row occupying
+your plan's worker cap until the stale-worker reaper clears it (roughly two
+minutes) - long enough for a crash-looping worker on a tight plan to hit
+`429 QUOTA_EXCEEDED` on its own registrations. Re-registering an ID your
+organization already owns costs nothing against the cap; an ID owned by another
+organization is rejected with `409`.
 
 ### Workflows (DAGs)
 
@@ -492,20 +503,72 @@ for {
 Configure outgoing webhooks for job events:
 
 ```go
-// Create webhook
-webhook, err := client.Webhooks().Create(ctx, &resources.CreateWebhookRequest{
-    URL:       "https://your-app.com/webhooks/spooled",
-    Events:    []string{"job.completed", "job.failed"},
-    QueueName: ptr("my-queue"),
-    Secret:    ptr("whsec_..."),
+// Create webhook. The secret signs every delivery with an X-Spooled-Signature header.
+webhook, err := client.Webhooks().Create(ctx, &resources.CreateOutgoingWebhookRequest{
+    Name: "Job Notifications",
+    URL:  "https://your-app.com/webhooks/spooled",
+    Events: []resources.WebhookEvent{
+        resources.WebhookEventJobCompleted,
+        resources.WebhookEventJobFailed,
+    },
+    Secret: ptr("whsec_..."),
 })
 
 // Test webhook
 client.Webhooks().Test(ctx, webhook.ID)
 
 // List deliveries
-deliveries, err := client.Webhooks().ListDeliveries(ctx, webhook.ID, nil)
+deliveries, err := client.Webhooks().Deliveries(ctx, webhook.ID, nil)
 ```
+
+**Webhooks disable themselves.** After 20 consecutive failed deliveries the
+server sets `Enabled` to `false` and `LastStatus` to `"auto_disabled"`, and the
+webhook stops receiving events. `LastStatus` is one of `"success"`, `"failed"`
+or `"auto_disabled"`. Bring it back with an update:
+
+```go
+if wh.LastStatus != nil && *wh.LastStatus == "auto_disabled" {
+    // Re-enabling counts against the plan webhook cap, so it can fail with
+    // 429 QUOTA_EXCEEDED.
+    _, err = client.Webhooks().Update(ctx, wh.ID, &resources.UpdateOutgoingWebhookRequest{
+        Enabled: ptr(true),
+    })
+}
+```
+
+`FailureCount` is the number of consecutive failed *deliveries*, counted once
+per delivery rather than once per retry attempt, so it is roughly five times
+smaller than a per-attempt count for the same real-world failures - recheck any
+alerting threshold you built on it. Any successful delivery resets it to `0`,
+including a successful manual `RetryDelivery`.
+
+**Clearing the signing secret is destructive.** The secret is three-state on
+update: leave `Secret` nil to keep it, set `Secret` to replace it, or set
+`ClearSecret` to remove it. Removing it means deliveries go out unsigned, with
+no `X-Spooled-Signature` header for your receiver to verify, and there is no way
+to recover the old value - set a new `Secret` to sign again.
+
+```go
+// Keeps the current secret: Secret is nil, so the field is left out entirely.
+_, err = client.Webhooks().Update(ctx, webhook.ID, &resources.UpdateOutgoingWebhookRequest{
+    Events: &newEvents,
+})
+
+// Replaces the secret.
+_, err = client.Webhooks().Update(ctx, webhook.ID, &resources.UpdateOutgoingWebhookRequest{
+    Secret: ptr("whsec_rotated"),
+})
+
+// Removes the secret. Deliveries are unsigned from here on.
+_, err = client.Webhooks().Update(ctx, webhook.ID, &resources.UpdateOutgoingWebhookRequest{
+    ClearSecret: true,
+})
+```
+
+`Deliveries` is not a durable audit log: only the newest 100 deliveries per
+webhook are readable, and rows are removed once they pass your plan's history
+retention window (1 day on free, 7 on starter, 30 on pro, 90 on enterprise).
+Copy anything you need to keep longer.
 
 ### Organizations
 

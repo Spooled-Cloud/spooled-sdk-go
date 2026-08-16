@@ -101,6 +101,16 @@ func (r *WorkersResource) Get(ctx context.Context, id string) (*Worker, error) {
 
 // RegisterWorkerRequest is the request to register a worker.
 type RegisterWorkerRequest struct {
+	// WorkerID is an optional stable worker identity: 1-128 characters from
+	// [A-Za-z0-9._-]. Supplying the same value across restarts makes
+	// registration an upsert, so the process reuses one worker row. Leave it
+	// nil and the server mints a UUID instead, which means every restart
+	// leaves the previous row counting against the plan worker cap until the
+	// stale-worker reaper clears it (roughly two minutes) - enough for a
+	// crash-looping worker on a tight plan to 429 itself out of registering.
+	// Re-registering an ID this organization already owns is not charged
+	// against the cap; an ID owned by a different organization returns 409.
+	WorkerID       *string        `json:"worker_id,omitempty"`
 	QueueName      string         `json:"queue_name"`
 	Hostname       string         `json:"hostname"`
 	WorkerType     *string        `json:"worker_type,omitempty"`

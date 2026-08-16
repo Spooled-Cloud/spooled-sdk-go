@@ -24,6 +24,13 @@ const (
 type Options struct {
 	// QueueName is the name of the queue to process
 	QueueName string
+	// WorkerID is an optional stable worker identity (1-128 chars from
+	// [A-Za-z0-9._-]). Keep it the same across restarts and registration
+	// upserts a single worker row, so a restarting process reclaims its
+	// identity. Leave it empty and the server mints a fresh UUID on every
+	// Start, which leaves the previous row occupying the plan worker cap
+	// until the stale-worker reaper clears it (roughly two minutes).
+	WorkerID string
 	// Hostname is the worker hostname (default: auto-detected)
 	Hostname string
 	// WorkerType is an identifier for this worker type
