@@ -71,6 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Admin().GetStats` now reads nested `{organizations, jobs, workers, system}`
   from `GET /admin/stats`. It previously typed flat `total_organizations` /
   `total_jobs` fields the API never sends, so every count unmarshalled as 0.
+- `Admin().GetPlans` now decodes the flat `PlanLimits` array from
+  `GET /admin/plans`. It previously typed a nested `{limits, price, description}`
+  wrapper the API never sends, so every limit unmarshalled as 0.
 
 ### Added
 

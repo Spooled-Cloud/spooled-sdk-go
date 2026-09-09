@@ -36,6 +36,53 @@ func TestUpdateOrganization_PatchesNotPuts(t *testing.T) {
 	}
 }
 
+func TestGetPlans_ReadsFlatPlanLimits(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/admin/plans" {
+			t.Errorf("request = %s %s, want GET /api/v1/admin/plans", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"tier": "free",
+				"display_name": "Free",
+				"max_jobs_per_day": 100,
+				"max_active_jobs": 10,
+				"max_queues": 2,
+				"max_workers": 1,
+				"max_api_keys": 2,
+				"max_schedules": 0,
+				"max_workflows": 0,
+				"max_webhooks": 0,
+				"max_payload_size_bytes": 65536,
+				"rate_limit_requests_per_second": 10,
+				"rate_limit_burst": 20,
+				"job_retention_days": 1,
+				"history_retention_days": 1
+			}
+		]`))
+	}))
+	defer server.Close()
+
+	res := NewAdminResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, AdminKey: "adminkey"}))
+	got, err := res.GetPlans(context.Background())
+	if err != nil {
+		t.Fatalf("GetPlans: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(plans) = %d, want 1", len(got))
+	}
+	if got[0].Tier != "free" || got[0].DisplayName != "Free" {
+		t.Errorf("plan = %+v, want free/Free", got[0])
+	}
+	if got[0].MaxJobsPerDay == nil || *got[0].MaxJobsPerDay != 100 {
+		t.Errorf("max_jobs_per_day = %v, want 100", got[0].MaxJobsPerDay)
+	}
+	if got[0].MaxPayloadSizeBytes != 65536 {
+		t.Errorf("max_payload_size_bytes = %d, want 65536", got[0].MaxPayloadSizeBytes)
+	}
+}
+
 func TestGetStats_ReadsNestedPlatformPayload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/admin/stats" {

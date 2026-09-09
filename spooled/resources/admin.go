@@ -90,8 +90,11 @@ type PlanPrice struct {
 }
 
 // GetPlans retrieves all available subscription plans.
-func (r *AdminResource) GetPlans(ctx context.Context) ([]PlanInfo, error) {
-	var result []PlanInfo
+//
+// GET /admin/plans returns a flat PlanLimits array (tier, display_name, and
+// the limit fields on the same object). It is not wrapped as {limits, price}.
+func (r *AdminResource) GetPlans(ctx context.Context) ([]PlanLimits, error) {
+	var result []PlanLimits
 	if err := r.base.AdminGet(ctx, "/api/v1/admin/plans", &result); err != nil {
 		return nil, err
 	}
