@@ -48,6 +48,30 @@ func TestJob_UnmarshalRetryCountFromDetailJSON(t *testing.T) {
 	}
 }
 
+func TestBatchJobStatus_UnmarshalRetryCountFromStatusJSON(t *testing.T) {
+	body := `{
+		"id":"job_1","status":"failed","queue_name":"emails",
+		"retry_count":3,"created_at":"2024-01-01T00:00:00Z",
+		"completed_at":"2024-01-01T00:01:00Z"
+	}`
+	var got BatchJobStatus
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if got.ID != "job_1" {
+		t.Errorf("ID = %q, want job_1", got.ID)
+	}
+	if got.QueueName != "emails" {
+		t.Errorf("QueueName = %q, want emails", got.QueueName)
+	}
+	if got.RetryCount != 3 {
+		t.Errorf("RetryCount = %d, want 3 (from retry_count)", got.RetryCount)
+	}
+	if got.CompletedAt == nil {
+		t.Fatal("CompletedAt is nil")
+	}
+}
+
 func TestClaimedJob_UnmarshalLeaseID(t *testing.T) {
 	tests := []struct {
 		name        string

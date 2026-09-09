@@ -65,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Jobs().List` / `Jobs().DLQ().List` now map `attempt` onto `RetryCount`.
   List/DLQ summaries send `attempt`, not `retry_count`, so every listed job
   looked like it had never been retried.
+- `Jobs().BatchStatus` now reads `queue_name`, `retry_count`, `created_at`,
+  and `completed_at`. `GET /jobs/status` always sent those fields; the SDK
+  previously decoded only `id` and `status`.
 
 ### Added
 

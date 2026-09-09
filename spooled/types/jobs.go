@@ -105,9 +105,14 @@ type JobStats struct {
 }
 
 // BatchJobStatus is the status of a job in a batch.
+// GET /jobs/status sends retry_count, not attempt, and has no max_retries.
 type BatchJobStatus struct {
-	ID     string    `json:"id"`
-	Status JobStatus `json:"status"`
+	ID          string     `json:"id"`
+	Status      JobStatus  `json:"status"`
+	QueueName   string     `json:"queue_name"`
+	RetryCount  int        `json:"retry_count"`
+	CreatedAt   time.Time  `json:"created_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 // BoostPriorityRequest is the request to boost a job's priority.
