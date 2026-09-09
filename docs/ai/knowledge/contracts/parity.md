@@ -8,3 +8,4 @@
 - Workflow job list/get/status are not their own REST routes. `GET /workflows/{id}` carries jobs + dependencies; `Jobs().ListJobs` reads that document. `POST /jobs/{id}/dependencies` takes `depends_on` + `dependency_mode` and returns `dependencies_added` / `dependencies_met`.
 - `GET /jobs/{id}/dependencies` is `{ job_id, dependencies, dependents, dependencies_met }` with `{ job_id, queue_name, status }` edges, not a nested `job` object or string id lists.
 - Email availability is `GET /auth/check-email?email=`, not `POST /auth/email/check`. The body is `available`, `exists`, `signup_enabled`.
+- Email login start is `POST /auth/email/start` → `{ message, email_sent_to }`, not `{ success, message }`.

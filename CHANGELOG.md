@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Auth().CheckEmail` now calls `GET /auth/check-email?email=`. It previously
   POSTed to `/auth/email/check`, which is not a backend route, so every check
   404'd. The response now also reads `available` and `signup_enabled`.
+- `Auth().StartEmailLogin` now reads `message` and `email_sent_to` from
+  `POST /auth/email/start`. It previously typed a `success` field the API never
+  sends, so a successful send unmarshalled as `Success: false`.
 
 ### Added
 

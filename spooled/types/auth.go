@@ -55,10 +55,10 @@ type StartEmailLoginRequest struct {
 	Email string `json:"email"`
 }
 
-// StartEmailLoginResponse is the response from starting email login.
+// StartEmailLoginResponse is POST /auth/email/start.
 type StartEmailLoginResponse struct {
-	Success bool    `json:"success"`
-	Message *string `json:"message,omitempty"`
+	Message     string `json:"message"`
+	EmailSentTo string `json:"email_sent_to"`
 }
 
 // CheckEmailResponse is GET /auth/check-email.
