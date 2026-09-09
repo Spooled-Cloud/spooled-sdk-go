@@ -68,9 +68,11 @@ type UpdateQueueConfigRequest struct {
 }
 
 // UpdateConfig updates a queue's configuration.
+//
+// PUT /queues/{name}/config — PUT /queues/{name} is 405 (that path is GET/DELETE only).
 func (r *QueuesResource) UpdateConfig(ctx context.Context, name string, req *UpdateQueueConfigRequest) (*QueueConfig, error) {
 	var result QueueConfig
-	if err := r.base.Put(ctx, fmt.Sprintf("/api/v1/queues/%s", name), req, &result); err != nil {
+	if err := r.base.Put(ctx, fmt.Sprintf("/api/v1/queues/%s/config", name), req, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
