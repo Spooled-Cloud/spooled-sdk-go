@@ -62,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backend route, so every check 404'd. The response now reads `valid`,
   `error`, and `suggestion` instead of `slug`/`message`, which the API never
   sends.
+- `Jobs().List` / `Jobs().DLQ().List` now map `attempt` onto `RetryCount`.
+  List/DLQ summaries send `attempt`, not `retry_count`, so every listed job
+  looked like it had never been retried.
 
 ### Added
 

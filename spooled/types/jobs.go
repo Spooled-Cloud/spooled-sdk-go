@@ -73,7 +73,8 @@ type JobSummary struct {
 	QueueName   string     `json:"queue_name"`
 	Status      JobStatus  `json:"status"`
 	Priority    int        `json:"priority"`
-	RetryCount  int        `json:"retry_count"`
+	RetryCount  int        `json:"attempt"`
+	MaxRetries  int        `json:"max_retries"`
 	CreatedAt   time.Time  `json:"created_at"`
 	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`

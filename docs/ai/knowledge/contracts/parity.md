@@ -12,3 +12,4 @@
 - Org webhook token is `GET/POST /organizations/webhook-token` (auth-scoped), not `/organizations/{id}/webhook-token`. Clear is `POST /organizations/webhook-token/clear` with `confirm: true`, not DELETE.
 - Org usage is `GET /organizations/usage` (auth-scoped), not `/organizations/{id}/usage`.
 - Slug check is `GET /organizations/check-slug?slug=`, not `/organizations/check-slug/{slug}`. Body is `available`, `valid`, `error`, `suggestion`.
+- Job list/DLQ summaries send `attempt` and `max_retries`, not `retry_count`. `Jobs().List` maps `attempt` onto `Job.RetryCount`. Detail `GET /jobs/{id}` still uses `retry_count`.

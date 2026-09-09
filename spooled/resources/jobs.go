@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -72,6 +73,23 @@ type Job struct {
 	WorkflowID        *string        `json:"workflow_id,omitempty"`
 	DependencyMode    *string        `json:"dependency_mode,omitempty"`
 	DependenciesMet   *bool          `json:"dependencies_met,omitempty"`
+}
+
+// UnmarshalJSON maps list/DLQ summaries that send "attempt" onto RetryCount.
+// GET /jobs/{id} still sends "retry_count".
+func (j *Job) UnmarshalJSON(data []byte) error {
+	type jobAlias Job
+	aux := struct {
+		Attempt *int `json:"attempt"`
+		*jobAlias
+	}{jobAlias: (*jobAlias)(j)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Attempt != nil && j.RetryCount == 0 {
+		j.RetryCount = *aux.Attempt
+	}
+	return nil
 }
 
 // CreateJobRequest is the request to create a new job.

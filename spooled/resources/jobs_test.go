@@ -16,6 +16,38 @@ func strPtr(s string) *string { return &s }
 
 func intPtr(i int) *int { return &i }
 
+func TestJob_UnmarshalAttemptFromListJSON(t *testing.T) {
+	body := `{
+		"id":"job_1","queue_name":"emails","status":"pending","priority":0,
+		"attempt":2,"max_retries":5,"created_at":"2024-01-01T00:00:00Z"
+	}`
+	var job Job
+	if err := json.Unmarshal([]byte(body), &job); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if job.RetryCount != 2 {
+		t.Errorf("RetryCount = %d, want 2 (from attempt)", job.RetryCount)
+	}
+	if job.MaxRetries != 5 {
+		t.Errorf("MaxRetries = %d, want 5", job.MaxRetries)
+	}
+}
+
+func TestJob_UnmarshalRetryCountFromDetailJSON(t *testing.T) {
+	body := `{
+		"id":"job_1","organization_id":"org_1","queue_name":"emails","status":"pending",
+		"payload":{},"retry_count":1,"max_retries":3,"priority":0,"timeout_seconds":300,
+		"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"
+	}`
+	var job Job
+	if err := json.Unmarshal([]byte(body), &job); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if job.RetryCount != 1 {
+		t.Errorf("RetryCount = %d, want 1 (from retry_count)", job.RetryCount)
+	}
+}
+
 func TestClaimedJob_UnmarshalLeaseID(t *testing.T) {
 	tests := []struct {
 		name        string
