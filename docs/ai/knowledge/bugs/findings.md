@@ -16,5 +16,6 @@
 | GS-12 | P1 | ~~`GetStats` typed flat totals the API never sends~~ **FIXED** | `spooled/resources/admin.go`; `GET /admin/stats` is nested `{organizations,jobs,workers,system}` |
 | GS-13 | P1 | ~~`GetPlans` typed nested `limits`/`price` the API never sends~~ **FIXED** | `spooled/resources/admin.go`; `GET /admin/plans` is a flat `PlanLimits` array |
 | GS-14 | P1 | ~~`Auth().Validate` dropped `claims` (org/queues/exp always empty)~~ **FIXED** | `spooled/resources/auth.go`; POST `/auth/validate` is `{valid,error,claims}` |
+| GS-15 | P1 | ~~`Auth().Logout` omitted refresh token so `/auth/refresh` survived~~ **FIXED** | `spooled/resources/auth.go`; POST `/auth/logout` body `refresh_token` |
 
 Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if caller wanted “omit means settings default ≠3”.

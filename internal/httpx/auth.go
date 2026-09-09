@@ -56,6 +56,13 @@ func (tr *TokenRefresher) SetRefreshToken(token string) {
 	tr.refreshToken = token
 }
 
+// GetRefreshToken returns the current refresh token.
+func (tr *TokenRefresher) GetRefreshToken() string {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.refreshToken
+}
+
 // GetAccessToken returns the current access token.
 func (tr *TokenRefresher) GetAccessToken() string {
 	tr.mu.Lock()

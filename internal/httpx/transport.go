@@ -26,6 +26,7 @@ type Transport struct {
 	// concurrently by every request goroutine sharing this Transport.
 	tokenMu          sync.RWMutex
 	accessToken      string
+	refreshToken     string
 	adminKey         string
 	userAgent        string
 	headers          map[string]string
@@ -113,6 +114,7 @@ func NewTransport(cfg Config) *Transport {
 		baseURL:          strings.TrimSuffix(cfg.BaseURL, "/"),
 		apiKey:           cfg.APIKey,
 		accessToken:      cfg.AccessToken,
+		refreshToken:     cfg.RefreshToken,
 		adminKey:         cfg.AdminKey,
 		userAgent:        cfg.UserAgent,
 		headers:          cfg.Headers,
@@ -170,9 +172,24 @@ func (t *Transport) setAccessToken(token string) {
 
 // SetRefreshToken updates the refresh token.
 func (t *Transport) SetRefreshToken(token string) {
+	t.tokenMu.Lock()
+	t.refreshToken = token
+	t.tokenMu.Unlock()
 	if t.tokenRefresher != nil {
 		t.tokenRefresher.SetRefreshToken(token)
 	}
+}
+
+// GetRefreshToken returns the current refresh token, if any.
+func (t *Transport) GetRefreshToken() string {
+	if t.tokenRefresher != nil {
+		if tok := t.tokenRefresher.GetRefreshToken(); tok != "" {
+			return tok
+		}
+	}
+	t.tokenMu.RLock()
+	defer t.tokenMu.RUnlock()
+	return t.refreshToken
 }
 
 // Request represents an HTTP request to be made.

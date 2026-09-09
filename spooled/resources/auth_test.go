@@ -2,6 +2,8 @@ package resources
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -103,5 +105,52 @@ func TestValidate_MapsClaimsNotTopLevelIDs(t *testing.T) {
 	}
 	if got.ExpiresAt == nil || got.ExpiresAt.Unix() != 1700003600 {
 		t.Errorf("ExpiresAt = %v, want unix 1700003600", got.ExpiresAt)
+	}
+}
+
+func TestLogout_SendsRefreshToken(t *testing.T) {
+	var gotBody map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/auth/logout" {
+			t.Errorf("path = %q, want /api/v1/auth/logout", r.URL.Path)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	res := NewAuthResource(httpx.NewTransport(httpx.Config{
+		BaseURL:      server.URL,
+		APIKey:       "sp_test_key",
+		RefreshToken: "rt_1",
+	}))
+	if err := res.Logout(context.Background()); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+	if gotBody["refresh_token"] != "rt_1" {
+		t.Errorf("body refresh_token = %q, want rt_1", gotBody["refresh_token"])
+	}
+}
+
+func TestLogout_PrefersExplicitRefreshToken(t *testing.T) {
+	var gotBody map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	res := NewAuthResource(httpx.NewTransport(httpx.Config{
+		BaseURL:      server.URL,
+		APIKey:       "sp_test_key",
+		RefreshToken: "rt_stored",
+	}))
+	if err := res.Logout(context.Background(), "rt_explicit"); err != nil {
+		t.Fatalf("Logout: %v", err)
+	}
+	if gotBody["refresh_token"] != "rt_explicit" {
+		t.Errorf("body refresh_token = %q, want rt_explicit", gotBody["refresh_token"])
 	}
 }

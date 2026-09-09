@@ -63,9 +63,30 @@ func (r *AuthResource) Refresh(ctx context.Context, req *RefreshRequest) (*Refre
 	return &result, nil
 }
 
-// Logout invalidates the current tokens.
-func (r *AuthResource) Logout(ctx context.Context) error {
-	return r.base.Post(ctx, "/api/v1/auth/logout", nil, nil)
+// LogoutRequest is POST /auth/logout. refresh_token must be in the body or
+// /auth/refresh still mints a new pair after the access token is blacklisted.
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
+// Logout invalidates the access token and, when available, the refresh token.
+//
+// POST /auth/logout blacklists the access token from Authorization. Without
+// refresh_token in the body, /auth/refresh still mints a new pair. An explicit
+// token is sent when given; otherwise the client's stored refresh token is used.
+func (r *AuthResource) Logout(ctx context.Context, refreshToken ...string) error {
+	token := ""
+	if len(refreshToken) > 0 {
+		token = refreshToken[0]
+	}
+	if token == "" {
+		token = r.base.transport.GetRefreshToken()
+	}
+	var body any
+	if token != "" {
+		body = &LogoutRequest{RefreshToken: token}
+	}
+	return r.base.Post(ctx, "/api/v1/auth/logout", body, nil)
 }
 
 // MeResponse is the response from the /auth/me endpoint.

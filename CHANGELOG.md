@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Auth().Logout` now sends the refresh token in the body. Without it the
+  access token is blacklisted but `/auth/refresh` still mints a new pair, so
+  logout did not end the session. The stored refresh token is used when the
+  argument is omitted, matching the Node, PHP, and Python SDKs.
 - `Auth().Validate` now maps `claims.org_id` / `api_key_id` / `queues` / `exp`
   onto `OrganizationID` / `APIKeyID` / `Queues` / `ExpiresAt`. It previously
   looked for top-level `organization_id` and `expires_at`, which the API never
