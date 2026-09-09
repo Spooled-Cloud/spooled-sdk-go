@@ -61,9 +61,11 @@ type StartEmailLoginResponse struct {
 	Message *string `json:"message,omitempty"`
 }
 
-// CheckEmailResponse is the response from checking if an email exists.
+// CheckEmailResponse is GET /auth/check-email.
 type CheckEmailResponse struct {
-	Exists bool `json:"exists"`
+	Available     bool `json:"available"`
+	Exists        bool `json:"exists"`
+	SignupEnabled bool `json:"signup_enabled"`
 }
 
 // VerifyEmailRequest is the request to verify an email login code.

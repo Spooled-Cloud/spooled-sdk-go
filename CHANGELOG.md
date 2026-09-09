@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Auth().CheckEmail` now calls `GET /auth/check-email?email=`. It previously
+  POSTed to `/auth/email/check`, which is not a backend route, so every check
+  404'd. The response now also reads `available` and `signup_enabled`.
+
 ### Added
 
 - **Stable worker identity.** `worker.Options.WorkerID` and

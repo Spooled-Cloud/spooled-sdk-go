@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"net/url"
 	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
@@ -126,15 +127,19 @@ func (r *AuthResource) StartEmailLogin(ctx context.Context, req *StartEmailLogin
 	return &result, nil
 }
 
-// CheckEmailResponse is the response from checking if an email exists.
+// CheckEmailResponse is GET /auth/check-email.
 type CheckEmailResponse struct {
-	Exists bool `json:"exists"`
+	Available     bool `json:"available"`
+	Exists        bool `json:"exists"`
+	SignupEnabled bool `json:"signup_enabled"`
 }
 
-// CheckEmail checks if an email exists in the system.
+// CheckEmail checks whether an email is registered (GET /auth/check-email).
 func (r *AuthResource) CheckEmail(ctx context.Context, email string) (*CheckEmailResponse, error) {
 	var result CheckEmailResponse
-	if err := r.base.Post(ctx, "/api/v1/auth/email/check", map[string]string{"email": email}, &result); err != nil {
+	query := url.Values{}
+	query.Set("email", email)
+	if err := r.base.GetWithQuery(ctx, "/api/v1/auth/check-email", query, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
