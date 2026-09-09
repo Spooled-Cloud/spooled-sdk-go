@@ -93,3 +93,37 @@ func TestAddJobDependencies_SendsDependsOn(t *testing.T) {
 		t.Error("Success = false, want true when dependencies_added > 0")
 	}
 }
+
+func TestGetJobDependencies_UnmarshalsBackendShape(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/jobs/job_2/dependencies" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"job_id":"job_2",
+			"dependencies":[{"job_id":"job_1","queue_name":"etl","status":"completed"}],
+			"dependents":[{"job_id":"job_3","queue_name":"etl","status":"pending"}],
+			"dependencies_met":true
+		}`))
+	}))
+	defer server.Close()
+
+	res := NewWorkflowsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	got, err := res.GetJobDependencies(context.Background(), "job_2")
+	if err != nil {
+		t.Fatalf("GetJobDependencies: %v", err)
+	}
+	if got.JobID != "job_2" {
+		t.Errorf("JobID = %q, want job_2", got.JobID)
+	}
+	if !got.DependenciesMet {
+		t.Error("DependenciesMet = false, want true")
+	}
+	if len(got.Dependencies) != 1 || got.Dependencies[0].JobID != "job_1" {
+		t.Errorf("Dependencies = %+v", got.Dependencies)
+	}
+	if len(got.Dependents) != 1 || got.Dependents[0].JobID != "job_3" {
+		t.Errorf("Dependents = %+v", got.Dependents)
+	}
+}

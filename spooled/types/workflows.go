@@ -110,11 +110,19 @@ type WorkflowJobStatus struct {
 	DependsOn []string  `json:"depends_on,omitempty"`
 }
 
-// JobWithDependencies represents a job with its dependencies.
+// DependencyInfo is one edge on GET /jobs/{id}/dependencies.
+type DependencyInfo struct {
+	JobID     string `json:"job_id"`
+	QueueName string `json:"queue_name"`
+	Status    string `json:"status"`
+}
+
+// JobWithDependencies is GET /jobs/{id}/dependencies.
 type JobWithDependencies struct {
-	Job          Job      `json:"job"`
-	Dependencies []string `json:"dependencies"`
-	Dependents   []string `json:"dependents"`
+	JobID           string           `json:"job_id"`
+	Dependencies    []DependencyInfo `json:"dependencies"`
+	Dependents      []DependencyInfo `json:"dependents"`
+	DependenciesMet bool             `json:"dependencies_met"`
 }
 
 // AddDependenciesRequest is the request to add job dependencies.
