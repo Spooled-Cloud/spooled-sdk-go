@@ -126,3 +126,39 @@ func TestUsage_UsesAuthScopedRoute(t *testing.T) {
 		t.Errorf("JobsToday.Current = %d, want 5", got.Usage.JobsToday.Current)
 	}
 }
+
+func TestCheckSlug_UsesQueryNotPath(t *testing.T) {
+	var gotMethod, gotPath, gotSlug string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotSlug = r.URL.Query().Get("slug")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"available":false,"valid":true,"suggestion":"acme-2"}`))
+	}))
+	defer server.Close()
+
+	res := NewOrganizationsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	got, err := res.CheckSlug(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("CheckSlug: %v", err)
+	}
+	if gotMethod != http.MethodGet {
+		t.Errorf("method = %q, want GET", gotMethod)
+	}
+	if gotPath != "/api/v1/organizations/check-slug" {
+		t.Errorf("path = %q, want /api/v1/organizations/check-slug", gotPath)
+	}
+	if gotSlug != "acme" {
+		t.Errorf("slug query = %q, want acme", gotSlug)
+	}
+	if got.Available {
+		t.Errorf("Available = true, want false")
+	}
+	if !got.Valid {
+		t.Errorf("Valid = false, want true")
+	}
+	if got.Suggestion == nil || *got.Suggestion != "acme-2" {
+		t.Errorf("Suggestion = %v, want acme-2", got.Suggestion)
+	}
+}

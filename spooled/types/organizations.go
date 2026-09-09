@@ -127,9 +127,10 @@ type OrganizationMember struct {
 
 // CheckSlugResponse is the response from checking slug availability.
 type CheckSlugResponse struct {
-	Available bool    `json:"available"`
-	Slug      string  `json:"slug"`
-	Message   *string `json:"message,omitempty"`
+	Available  bool    `json:"available"`
+	Valid      bool    `json:"valid"`
+	Error      *string `json:"error,omitempty"`
+	Suggestion *string `json:"suggestion,omitempty"`
 }
 
 // GenerateSlugResponse is the response from generating a slug.

@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
@@ -196,15 +197,18 @@ func (r *OrganizationsResource) Members(ctx context.Context, id string) ([]Organ
 
 // CheckSlugResponse is the response from checking slug availability.
 type CheckSlugResponse struct {
-	Available bool    `json:"available"`
-	Slug      string  `json:"slug"`
-	Message   *string `json:"message,omitempty"`
+	Available  bool    `json:"available"`
+	Valid      bool    `json:"valid"`
+	Error      *string `json:"error,omitempty"`
+	Suggestion *string `json:"suggestion,omitempty"`
 }
 
-// CheckSlug checks if a slug is available.
+// CheckSlug checks if a slug is available (GET /organizations/check-slug?slug=).
 func (r *OrganizationsResource) CheckSlug(ctx context.Context, slug string) (*CheckSlugResponse, error) {
 	var result CheckSlugResponse
-	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/organizations/check-slug/%s", slug), &result); err != nil {
+	query := url.Values{}
+	query.Set("slug", slug)
+	if err := r.base.GetWithQuery(ctx, "/api/v1/organizations/check-slug", query, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

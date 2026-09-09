@@ -57,6 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Organizations().Usage` now calls `GET /organizations/usage`. It previously
   used `/organizations/{id}/usage`, which is not a backend route, so every
   call 404'd.
+- `Organizations().CheckSlug` now calls `GET /organizations/check-slug?slug=`.
+  It previously requested `/organizations/check-slug/{slug}`, which is not a
+  backend route, so every check 404'd. The response now reads `valid`,
+  `error`, and `suggestion` instead of `slug`/`message`, which the API never
+  sends.
 
 ### Added
 

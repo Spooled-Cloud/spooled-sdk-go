@@ -11,3 +11,4 @@
 - Email login start is `POST /auth/email/start` → `{ message, email_sent_to }`, not `{ success, message }`.
 - Org webhook token is `GET/POST /organizations/webhook-token` (auth-scoped), not `/organizations/{id}/webhook-token`. Clear is `POST /organizations/webhook-token/clear` with `confirm: true`, not DELETE.
 - Org usage is `GET /organizations/usage` (auth-scoped), not `/organizations/{id}/usage`.
+- Slug check is `GET /organizations/check-slug?slug=`, not `/organizations/check-slug/{slug}`. Body is `available`, `valid`, `error`, `suggestion`.
