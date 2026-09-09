@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Auth().StartEmailLogin` now reads `message` and `email_sent_to` from
   `POST /auth/email/start`. It previously typed a `success` field the API never
   sends, so a successful send unmarshalled as `Success: false`.
+- `Organizations().GetWebhookToken` / `RegenerateWebhookToken` now call
+  `GET/POST /organizations/webhook-token`. They previously used
+  `/organizations/{id}/webhook-token`, which is not a backend route, so every
+  call 404'd. `ClearWebhookToken` now POSTs `/organizations/webhook-token/clear`
+  with `confirm: true` instead of DELETE on the missing id path.
 
 ### Added
 

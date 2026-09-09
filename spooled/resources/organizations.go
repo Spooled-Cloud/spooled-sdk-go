@@ -227,25 +227,34 @@ type WebhookTokenResponse struct {
 	WebhookURL   *string `json:"webhook_url,omitempty"`
 }
 
-// GetWebhookToken retrieves the webhook token for an organization.
+// GetWebhookToken retrieves the webhook token for the authenticated organization.
+// id is unused; the backend route is GET /organizations/webhook-token (org from
+// the API key), not /organizations/{id}/webhook-token.
 func (r *OrganizationsResource) GetWebhookToken(ctx context.Context, id string) (*WebhookTokenResponse, error) {
+	_ = id
 	var result WebhookTokenResponse
-	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/organizations/%s/webhook-token", id), &result); err != nil {
+	if err := r.base.Get(ctx, "/api/v1/organizations/webhook-token", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// RegenerateWebhookToken regenerates the webhook token for an organization.
+// RegenerateWebhookToken regenerates the webhook token for the authenticated organization.
+// id is unused; the backend route is POST /organizations/webhook-token/regenerate.
 func (r *OrganizationsResource) RegenerateWebhookToken(ctx context.Context, id string) (*WebhookTokenResponse, error) {
+	_ = id
 	var result WebhookTokenResponse
-	if err := r.base.Post(ctx, fmt.Sprintf("/api/v1/organizations/%s/webhook-token/regenerate", id), nil, &result); err != nil {
+	if err := r.base.Post(ctx, "/api/v1/organizations/webhook-token/regenerate", nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
-// ClearWebhookToken clears the webhook token for an organization.
+// ClearWebhookToken asks the backend to clear the webhook token.
+// The backend rejects this (use regenerate to rotate). id is unused; the
+// route is POST /organizations/webhook-token/clear with confirm: true, not
+// DELETE /organizations/{id}/webhook-token.
 func (r *OrganizationsResource) ClearWebhookToken(ctx context.Context, id string) error {
-	return r.base.Delete(ctx, fmt.Sprintf("/api/v1/organizations/%s/webhook-token", id))
+	_ = id
+	return r.base.Post(ctx, "/api/v1/organizations/webhook-token/clear", map[string]bool{"confirm": true}, nil)
 }

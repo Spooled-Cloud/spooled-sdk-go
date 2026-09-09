@@ -9,3 +9,4 @@
 - `GET /jobs/{id}/dependencies` is `{ job_id, dependencies, dependents, dependencies_met }` with `{ job_id, queue_name, status }` edges, not a nested `job` object or string id lists.
 - Email availability is `GET /auth/check-email?email=`, not `POST /auth/email/check`. The body is `available`, `exists`, `signup_enabled`.
 - Email login start is `POST /auth/email/start` → `{ message, email_sent_to }`, not `{ success, message }`.
+- Org webhook token is `GET/POST /organizations/webhook-token` (auth-scoped), not `/organizations/{id}/webhook-token`. Clear is `POST /organizations/webhook-token/clear` with `confirm: true`, not DELETE.
