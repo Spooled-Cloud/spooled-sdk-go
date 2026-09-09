@@ -68,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Jobs().BatchStatus` now reads `queue_name`, `retry_count`, `created_at`,
   and `completed_at`. `GET /jobs/status` always sent those fields; the SDK
   previously decoded only `id` and `status`.
+- `Admin().GetStats` now reads nested `{organizations, jobs, workers, system}`
+  from `GET /admin/stats`. It previously typed flat `total_organizations` /
+  `total_jobs` fields the API never sends, so every count unmarshalled as 0.
 
 ### Added
 

@@ -20,15 +20,48 @@ func NewAdminResource(transport *httpx.Transport) *AdminResource {
 	return &AdminResource{base: NewBase(transport)}
 }
 
-// AdminStats contains platform-wide statistics.
+// AdminPlanCount is one plan's organization count from GET /admin/stats.
+type AdminPlanCount struct {
+	Plan  string `json:"plan"`
+	Count int    `json:"count"`
+}
+
+// AdminOrgStats is organization counts from GET /admin/stats.
+type AdminOrgStats struct {
+	Total           int              `json:"total"`
+	ByPlan          []AdminPlanCount `json:"by_plan"`
+	CreatedToday    int              `json:"created_today"`
+	CreatedThisWeek int              `json:"created_this_week"`
+}
+
+// AdminJobStats is job counts from GET /admin/stats.
+type AdminJobStats struct {
+	TotalActive  int `json:"total_active"`
+	Pending      int `json:"pending"`
+	Processing   int `json:"processing"`
+	Completed24h int `json:"completed_24h"`
+	Failed24h    int `json:"failed_24h"`
+}
+
+// AdminWorkerStats is worker counts from GET /admin/stats.
+type AdminWorkerStats struct {
+	Total    int `json:"total"`
+	Healthy  int `json:"healthy"`
+	Degraded int `json:"degraded"`
+}
+
+// AdminSystemStats is process info from GET /admin/stats.
+type AdminSystemStats struct {
+	APIVersion    string `json:"api_version"`
+	UptimeSeconds int64  `json:"uptime_seconds"`
+}
+
+// AdminStats is GET /admin/stats — nested org/job/worker/system counts, not flat totals.
 type AdminStats struct {
-	TotalOrganizations  int            `json:"total_organizations"`
-	TotalJobs           int            `json:"total_jobs"`
-	TotalWorkers        int            `json:"total_workers"`
-	TotalQueues         int            `json:"total_queues"`
-	TotalAPIKeys        int            `json:"total_api_keys"`
-	JobsByStatus        map[string]int `json:"jobs_by_status"`
-	OrganizationsByPlan map[string]int `json:"organizations_by_plan"`
+	Organizations AdminOrgStats    `json:"organizations"`
+	Jobs          AdminJobStats    `json:"jobs"`
+	Workers       AdminWorkerStats `json:"workers"`
+	System        AdminSystemStats `json:"system"`
 }
 
 // GetStats retrieves platform-wide statistics.
