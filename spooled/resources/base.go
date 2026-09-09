@@ -163,6 +163,20 @@ func (b *Base) AdminPut(ctx context.Context, path string, body any, result any) 
 	return decodeResponse(resp, result)
 }
 
+// AdminPatch performs a PATCH request with admin key.
+func (b *Base) AdminPatch(ctx context.Context, path string, body any, result any) error {
+	resp, err := b.transport.Do(ctx, &httpx.Request{
+		Method:      http.MethodPatch,
+		Path:        path,
+		Body:        body,
+		UseAdminKey: true,
+	})
+	if err != nil {
+		return err
+	}
+	return decodeResponse(resp, result)
+}
+
 // AdminDelete performs a DELETE request with admin key.
 func (b *Base) AdminDelete(ctx context.Context, path string) error {
 	_, err := b.transport.Do(ctx, &httpx.Request{

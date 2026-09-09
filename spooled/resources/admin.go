@@ -145,7 +145,7 @@ type AdminUpdateOrganizationRequest struct {
 // UpdateOrganization updates an organization (admin only).
 func (r *AdminResource) UpdateOrganization(ctx context.Context, id string, req *AdminUpdateOrganizationRequest) (*Organization, error) {
 	var result Organization
-	if err := r.base.AdminPut(ctx, fmt.Sprintf("/api/v1/admin/organizations/%s", id), req, &result); err != nil {
+	if err := r.base.AdminPatch(ctx, fmt.Sprintf("/api/v1/admin/organizations/%s", id), req, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -155,7 +155,7 @@ func (r *AdminResource) UpdateOrganization(ctx context.Context, id string, req *
 func (r *AdminResource) DeleteOrganization(ctx context.Context, id string, hard bool) error {
 	path := fmt.Sprintf("/api/v1/admin/organizations/%s", id)
 	if hard {
-		path += "?hard=true"
+		path += "?hard_delete=true"
 	}
 	return r.base.AdminDelete(ctx, path)
 }
