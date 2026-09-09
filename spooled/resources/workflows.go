@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -55,6 +56,35 @@ type Workflow struct {
 	StartedAt      *time.Time     `json:"started_at,omitempty"`
 	CompletedAt    *time.Time     `json:"completed_at,omitempty"`
 	Metadata       map[string]any `json:"metadata,omitempty"`
+}
+
+// UnmarshalJSON maps GET /workflows/{id} progress counts onto TotalJobs.
+// List/cancel/retry send top-level total_jobs; GET detail does not.
+func (w *Workflow) UnmarshalJSON(data []byte) error {
+	type workflowAlias Workflow
+	aux := struct {
+		*workflowAlias
+		Progress *struct {
+			Total     int `json:"total"`
+			Completed int `json:"completed"`
+			Failed    int `json:"failed"`
+		} `json:"progress"`
+	}{workflowAlias: (*workflowAlias)(w)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Progress != nil {
+		if w.TotalJobs == 0 {
+			w.TotalJobs = aux.Progress.Total
+		}
+		if w.CompletedJobs == 0 {
+			w.CompletedJobs = aux.Progress.Completed
+		}
+		if w.FailedJobs == 0 {
+			w.FailedJobs = aux.Progress.Failed
+		}
+	}
+	return nil
 }
 
 // ListWorkflowsParams are parameters for listing workflows.

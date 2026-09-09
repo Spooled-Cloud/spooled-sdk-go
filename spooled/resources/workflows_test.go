@@ -11,6 +11,77 @@ import (
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 )
 
+func TestWorkflow_UnmarshalProgressFromGetDetail(t *testing.T) {
+	body := `{
+		"id":"wf_1","name":"ETL","status":"running",
+		"created_at":"2024-01-01T00:00:00Z",
+		"jobs":[{"id":"job_1"},{"id":"job_2"}],
+		"progress":{"total":2,"completed":1,"failed":0,"pending":1,"processing":0}
+	}`
+	var wf Workflow
+	if err := json.Unmarshal([]byte(body), &wf); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if wf.TotalJobs != 2 {
+		t.Errorf("TotalJobs = %d, want 2 (from progress.total)", wf.TotalJobs)
+	}
+	if wf.CompletedJobs != 1 {
+		t.Errorf("CompletedJobs = %d, want 1 (from progress.completed)", wf.CompletedJobs)
+	}
+	if wf.FailedJobs != 0 {
+		t.Errorf("FailedJobs = %d, want 0", wf.FailedJobs)
+	}
+}
+
+func TestWorkflow_UnmarshalListTotalJobs(t *testing.T) {
+	body := `{
+		"id":"wf_1","name":"ETL","status":"running",
+		"total_jobs":4,"completed_jobs":3,"failed_jobs":1,
+		"created_at":"2024-01-01T00:00:00Z"
+	}`
+	var wf Workflow
+	if err := json.Unmarshal([]byte(body), &wf); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if wf.TotalJobs != 4 {
+		t.Errorf("TotalJobs = %d, want 4", wf.TotalJobs)
+	}
+	if wf.CompletedJobs != 3 {
+		t.Errorf("CompletedJobs = %d, want 3", wf.CompletedJobs)
+	}
+	if wf.FailedJobs != 1 {
+		t.Errorf("FailedJobs = %d, want 1", wf.FailedJobs)
+	}
+}
+
+func TestGet_MapsProgressCounts(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/workflows/wf_1" {
+			t.Errorf("path = %q, want /api/v1/workflows/wf_1", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"wf_1","name":"ETL","status":"running",
+			"created_at":"2024-01-01T00:00:00Z",
+			"jobs":[{"id":"job_1"},{"id":"job_2"}],
+			"progress":{"total":2,"completed":1,"failed":0,"pending":1,"processing":0}
+		}`))
+	}))
+	defer server.Close()
+
+	res := NewWorkflowsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	wf, err := res.Get(context.Background(), "wf_1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if wf.TotalJobs != 2 {
+		t.Errorf("TotalJobs = %d, want 2", wf.TotalJobs)
+	}
+	if wf.CompletedJobs != 1 {
+		t.Errorf("CompletedJobs = %d, want 1", wf.CompletedJobs)
+	}
+}
+
 func TestListJobs_ReadsWorkflowDetail(t *testing.T) {
 	var gotPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

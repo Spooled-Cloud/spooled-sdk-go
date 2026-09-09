@@ -6,6 +6,7 @@
 - Zero-value gRPC fields are a footgun; document for callers.
 - gRPC enqueue: `MaxRetries`/`TimeoutSeconds` are `*int32` (nil = server defaults).
 - Workflow job list/get/status are not their own REST routes. `GET /workflows/{id}` carries jobs + dependencies; `Jobs().ListJobs` reads that document. `POST /jobs/{id}/dependencies` takes `depends_on` + `dependency_mode` and returns `dependencies_added` / `dependencies_met`.
+- `GET /workflows/{id}` is `WorkflowDetailResponse`: job counts are under `progress` (`total`/`completed`/`failed`), not top-level `total_jobs` like list/cancel/retry. `Workflow.UnmarshalJSON` maps those onto `TotalJobs`/`CompletedJobs`/`FailedJobs`.
 - `GET /jobs/{id}/dependencies` is `{ job_id, dependencies, dependents, dependencies_met }` with `{ job_id, queue_name, status }` edges, not a nested `job` object or string id lists.
 - Email availability is `GET /auth/check-email?email=`, not `POST /auth/email/check`. The body is `available`, `exists`, `signup_enabled`.
 - Email login start is `POST /auth/email/start` → `{ message, email_sent_to }`, not `{ success, message }`.
