@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Auth().Validate` now maps `claims.org_id` / `api_key_id` / `queues` / `exp`
+  onto `OrganizationID` / `APIKeyID` / `Queues` / `ExpiresAt`. It previously
+  looked for top-level `organization_id` and `expires_at`, which the API never
+  sends, so a valid token unmarshalled as empty IDs.
 - `Auth().CheckEmail` now calls `GET /auth/check-email?email=`. It previously
   POSTed to `/auth/email/check`, which is not a backend route, so every check
   404'd. The response now also reads `available` and `signup_enabled`.

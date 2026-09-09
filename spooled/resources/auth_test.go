@@ -73,3 +73,35 @@ func TestStartEmailLogin_MapsMessageAndEmailSentTo(t *testing.T) {
 		t.Errorf("EmailSentTo = %q, want n***@example.com", got.EmailSentTo)
 	}
 }
+
+func TestValidate_MapsClaimsNotTopLevelIDs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/auth/validate" {
+			t.Errorf("path = %q, want /api/v1/auth/validate", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"valid":true,"claims":{"org_id":"org_1","api_key_id":"key_1","queues":["emails"],"exp":1700003600,"iat":1700000000}}`))
+	}))
+	defer server.Close()
+
+	res := NewAuthResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	got, err := res.Validate(context.Background(), &ValidateRequest{Token: "jwt"})
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if !got.Valid {
+		t.Errorf("Valid = false, want true")
+	}
+	if got.OrganizationID == nil || *got.OrganizationID != "org_1" {
+		t.Errorf("OrganizationID = %v, want org_1", got.OrganizationID)
+	}
+	if got.APIKeyID == nil || *got.APIKeyID != "key_1" {
+		t.Errorf("APIKeyID = %v, want key_1", got.APIKeyID)
+	}
+	if len(got.Queues) != 1 || got.Queues[0] != "emails" {
+		t.Errorf("Queues = %v, want [emails]", got.Queues)
+	}
+	if got.ExpiresAt == nil || got.ExpiresAt.Unix() != 1700003600 {
+		t.Errorf("ExpiresAt = %v, want unix 1700003600", got.ExpiresAt)
+	}
+}

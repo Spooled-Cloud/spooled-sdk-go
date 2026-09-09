@@ -10,6 +10,7 @@
 - `GET /jobs/{id}/dependencies` is `{ job_id, dependencies, dependents, dependencies_met }` with `{ job_id, queue_name, status }` edges, not a nested `job` object or string id lists.
 - Email availability is `GET /auth/check-email?email=`, not `POST /auth/email/check`. The body is `available`, `exists`, `signup_enabled`.
 - Email login start is `POST /auth/email/start` → `{ message, email_sent_to }`, not `{ success, message }`.
+- `POST /auth/validate` is `{ valid, error?, claims? }`. Claims are `org_id`, `api_key_id`, `queues`, `exp`. `ValidateResponse.UnmarshalJSON` maps those onto `OrganizationID` / `APIKeyID` / `Queues` / `ExpiresAt`.
 - Org webhook token is `GET/POST /organizations/webhook-token` (auth-scoped), not `/organizations/{id}/webhook-token`. Clear is `POST /organizations/webhook-token/clear` with `confirm: true`, not DELETE.
 - Org usage is `GET /organizations/usage` (auth-scoped), not `/organizations/{id}/usage`.
 - Admin org update is `PATCH /admin/organizations/{id}`, not PUT. Hard delete is `?hard_delete=true`, not `?hard=true`.

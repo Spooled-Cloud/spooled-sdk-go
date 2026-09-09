@@ -15,5 +15,6 @@
 | GS-11 | P2 | ~~`Jobs().List` dropped `job_type` from summaries~~ **FIXED** | `spooled/resources/jobs.go`; `GET /jobs` sends `job_type` from payload |
 | GS-12 | P1 | ~~`GetStats` typed flat totals the API never sends~~ **FIXED** | `spooled/resources/admin.go`; `GET /admin/stats` is nested `{organizations,jobs,workers,system}` |
 | GS-13 | P1 | ~~`GetPlans` typed nested `limits`/`price` the API never sends~~ **FIXED** | `spooled/resources/admin.go`; `GET /admin/plans` is a flat `PlanLimits` array |
+| GS-14 | P1 | ~~`Auth().Validate` dropped `claims` (org/queues/exp always empty)~~ **FIXED** | `spooled/resources/auth.go`; POST `/auth/validate` is `{valid,error,claims}` |
 
 Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if caller wanted “omit means settings default ≠3”.

@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"encoding/json"
 	"net/url"
 	"time"
 
@@ -90,12 +91,52 @@ type ValidateRequest struct {
 	Token string `json:"token"`
 }
 
-// ValidateResponse is the response from validating a token.
+// ValidateResponse is POST /auth/validate — `{ valid, error?, claims? }`.
+//
+// Claims carry org_id, api_key_id, queues, exp. The API never sends
+// top-level organization_id / expires_at.
 type ValidateResponse struct {
 	Valid          bool       `json:"valid"`
+	Error          *string    `json:"error,omitempty"`
 	OrganizationID *string    `json:"organization_id,omitempty"`
 	APIKeyID       *string    `json:"api_key_id,omitempty"`
+	Queues         []string   `json:"queues,omitempty"`
 	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
+}
+
+// UnmarshalJSON maps claims.org_id / api_key_id / queues / exp onto the
+// exported fields. A valid token otherwise unmarshals as empty IDs.
+func (v *ValidateResponse) UnmarshalJSON(data []byte) error {
+	type alias ValidateResponse
+	aux := struct {
+		*alias
+		Claims *struct {
+			OrgID    *string  `json:"org_id"`
+			APIKeyID *string  `json:"api_key_id"`
+			Queues   []string `json:"queues"`
+			Exp      *int64   `json:"exp"`
+		} `json:"claims"`
+	}{alias: (*alias)(v)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Claims == nil {
+		return nil
+	}
+	if v.OrganizationID == nil && aux.Claims.OrgID != nil {
+		v.OrganizationID = aux.Claims.OrgID
+	}
+	if v.APIKeyID == nil && aux.Claims.APIKeyID != nil {
+		v.APIKeyID = aux.Claims.APIKeyID
+	}
+	if len(v.Queues) == 0 && aux.Claims.Queues != nil {
+		v.Queues = aux.Claims.Queues
+	}
+	if v.ExpiresAt == nil && aux.Claims.Exp != nil {
+		t := time.Unix(*aux.Claims.Exp, 0).UTC()
+		v.ExpiresAt = &t
+	}
+	return nil
 }
 
 // Validate validates a token.
