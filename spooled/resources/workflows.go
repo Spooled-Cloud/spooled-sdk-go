@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -170,22 +171,82 @@ type WorkflowJob struct {
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
+type workflowDetailJob struct {
+	ID          string     `json:"id"`
+	Key         string     `json:"key"`
+	Queue       string     `json:"queue"`
+	QueueName   string     `json:"queue_name"`
+	Status      JobStatus  `json:"status"`
+	CreatedAt   time.Time  `json:"created_at"`
+	StartedAt   *time.Time `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+}
+
+type workflowDetailDep struct {
+	ParentJobID string `json:"parent_job_id"`
+	ChildJobID  string `json:"child_job_id"`
+}
+
+type workflowDetail struct {
+	ID           string              `json:"id"`
+	Jobs         []workflowDetailJob `json:"jobs"`
+	Dependencies []workflowDetailDep `json:"dependencies"`
+}
+
+func jobsFromWorkflowDetail(detail workflowDetail) []WorkflowJob {
+	jobs := make([]WorkflowJob, 0, len(detail.Jobs))
+	for _, raw := range detail.Jobs {
+		queue := raw.QueueName
+		if queue == "" {
+			queue = raw.Queue
+		}
+		dependsOn := make([]string, 0)
+		for _, edge := range detail.Dependencies {
+			if edge.ChildJobID == raw.ID {
+				dependsOn = append(dependsOn, edge.ParentJobID)
+			}
+		}
+		jobs = append(jobs, WorkflowJob{
+			ID:          raw.ID,
+			Key:         raw.Key,
+			QueueName:   queue,
+			Status:      raw.Status,
+			DependsOn:   dependsOn,
+			CreatedAt:   raw.CreatedAt,
+			StartedAt:   raw.StartedAt,
+			CompletedAt: raw.CompletedAt,
+		})
+	}
+	return jobs
+}
+
 // ListJobs retrieves all jobs in a workflow.
+//
+// The backend has no /workflows/{id}/jobs route; job rows live on GET /workflows/{id}.
 func (r *WorkflowJobsResource) ListJobs(ctx context.Context, workflowID string) ([]WorkflowJob, error) {
-	var result []WorkflowJob
-	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/workflows/%s/jobs", workflowID), &result); err != nil {
+	var detail workflowDetail
+	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/workflows/%s", workflowID), &detail); err != nil {
 		return nil, err
 	}
-	return result, nil
+	return jobsFromWorkflowDetail(detail), nil
 }
 
 // GetJob retrieves a specific job in a workflow.
 func (r *WorkflowJobsResource) GetJob(ctx context.Context, workflowID, jobID string) (*WorkflowJob, error) {
-	var result WorkflowJob
-	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/workflows/%s/jobs/%s", workflowID, jobID), &result); err != nil {
+	jobs, err := r.ListJobs(ctx, workflowID)
+	if err != nil {
 		return nil, err
 	}
-	return &result, nil
+	for i := range jobs {
+		if jobs[i].ID == jobID {
+			return &jobs[i], nil
+		}
+	}
+	return nil, &httpx.NotFoundError{APIError: &httpx.APIError{
+		StatusCode: http.StatusNotFound,
+		Code:       "NOT_FOUND",
+		Message:    fmt.Sprintf("Job %s not found in workflow %s", jobID, workflowID),
+	}}
 }
 
 // WorkflowJobStatus represents the status of jobs in a workflow.
@@ -203,11 +264,20 @@ type WorkflowJobStatus struct {
 
 // GetJobsStatus retrieves the status of all jobs in a workflow.
 func (r *WorkflowJobsResource) GetJobsStatus(ctx context.Context, workflowID string) (*WorkflowJobStatusResponse, error) {
-	var result WorkflowJobStatusResponse
-	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/workflows/%s/jobs/status", workflowID), &result); err != nil {
+	jobs, err := r.ListJobs(ctx, workflowID)
+	if err != nil {
 		return nil, err
 	}
-	return &result, nil
+	statuses := make([]WorkflowJobStatus, 0, len(jobs))
+	for _, job := range jobs {
+		statuses = append(statuses, WorkflowJobStatus{
+			Key:       job.Key,
+			JobID:     job.ID,
+			Status:    job.Status,
+			DependsOn: job.DependsOn,
+		})
+	}
+	return &WorkflowJobStatusResponse{Jobs: statuses}, nil
 }
 
 // Job dependencies (can be used standalone)
@@ -236,8 +306,10 @@ type AddDependenciesRequest struct {
 
 // AddDependenciesResponse is the response from adding dependencies.
 type AddDependenciesResponse struct {
-	Success      bool     `json:"success"`
-	Dependencies []string `json:"dependencies"`
+	DependenciesAdded int      `json:"dependencies_added"`
+	DependenciesMet   bool     `json:"dependencies_met"`
+	Success           bool     `json:"success"`
+	Dependencies      []string `json:"dependencies,omitempty"`
 }
 
 // AddJobDependencies adds dependencies to a job.
@@ -245,6 +317,9 @@ func (r *WorkflowsResource) AddJobDependencies(ctx context.Context, jobID string
 	var result AddDependenciesResponse
 	if err := r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/dependencies", jobID), req, &result); err != nil {
 		return nil, err
+	}
+	if !result.Success {
+		result.Success = result.DependenciesAdded > 0
 	}
 	return &result, nil
 }

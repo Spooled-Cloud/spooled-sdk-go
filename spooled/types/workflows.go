@@ -125,6 +125,8 @@ type AddDependenciesRequest struct {
 
 // AddDependenciesResponse is the response from adding dependencies.
 type AddDependenciesResponse struct {
-	Success      bool     `json:"success"`
-	Dependencies []string `json:"dependencies"`
+	DependenciesAdded int      `json:"dependencies_added"`
+	DependenciesMet   bool     `json:"dependencies_met"`
+	Success           bool     `json:"success"`
+	Dependencies      []string `json:"dependencies,omitempty"`
 }
