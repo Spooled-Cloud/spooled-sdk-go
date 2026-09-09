@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 )
@@ -56,20 +57,22 @@ type SystemMetrics struct {
 	AvgLatencyMs   float64 `json:"avg_latency_ms"`
 }
 
-// Get retrieves system metrics.
-func (r *MetricsResource) Get(ctx context.Context) (*Metrics, error) {
-	var result Metrics
-	if err := r.base.Get(ctx, "/api/v1/metrics", &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// Prometheus retrieves metrics in Prometheus format.
-func (r *MetricsResource) Prometheus(ctx context.Context) (string, error) {
-	var result string
-	if err := r.base.Get(ctx, "/api/v1/metrics/prometheus", &result); err != nil {
+// Get retrieves Prometheus text from GET /metrics (not under /api/v1).
+func (r *MetricsResource) Get(ctx context.Context) (string, error) {
+	resp, err := r.base.transport.Do(ctx, &httpx.Request{
+		Method: http.MethodGet,
+		Path:   "/metrics",
+	})
+	if err != nil {
 		return "", err
 	}
-	return result, nil
+	if resp == nil {
+		return "", nil
+	}
+	return string(resp.Body), nil
+}
+
+// Prometheus is GET /metrics. There is no /api/v1/metrics/prometheus route.
+func (r *MetricsResource) Prometheus(ctx context.Context) (string, error) {
+	return r.Get(ctx)
 }

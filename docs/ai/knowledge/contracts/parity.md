@@ -23,3 +23,4 @@
 - `GET /jobs/status` returns `{ id, status, queue_name, retry_count, created_at, completed_at }` (no `attempt`/`max_retries`). `BatchStatus` maps `retry_count` onto `RetryCount`.
 - `POST /schedules` returns `{ id, name, cron_expression, next_run_at }`, not a full `Schedule`. `Schedules().Create` backfills queue/timezone/payload from the request and sets `IsActive` true (the insert is always active).
 - Queue config upsert is `PUT /queues/{name}/config`. `GET`/`DELETE /queues/{name}` exist; PUT on that path is 405.
+- Prometheus scrape is `GET /metrics` (text, no `/api/v1` prefix). There is no JSON `/api/v1/metrics` or `/api/v1/metrics/prometheus`.
