@@ -7,5 +7,6 @@
 | GS-03 | P1 | ~~`CheckEmail` POSTed `/auth/email/check` (404)~~ **FIXED** | `spooled/resources/auth.go`; backend is `GET /auth/check-email` |
 | GS-04 | P1 | ~~`StartEmailLogin` typed `success` the API never sends (always false)~~ **FIXED** | `spooled/resources/auth.go`; body is `message` + `email_sent_to` |
 | GS-05 | P1 | ~~Webhook token methods called `/organizations/{id}/webhook-token` (404)~~ **FIXED** | `spooled/resources/organizations.go`; routes are auth-scoped `/organizations/webhook-token` |
+| GS-06 | P1 | ~~`Usage` called `/organizations/{id}/usage` (404)~~ **FIXED** | `spooled/resources/organizations.go`; route is auth-scoped `GET /organizations/usage` |
 
 Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if caller wanted “omit means settings default ≠3”.

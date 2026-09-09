@@ -54,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/organizations/{id}/webhook-token`, which is not a backend route, so every
   call 404'd. `ClearWebhookToken` now POSTs `/organizations/webhook-token/clear`
   with `confirm: true` instead of DELETE on the missing id path.
+- `Organizations().Usage` now calls `GET /organizations/usage`. It previously
+  used `/organizations/{id}/usage`, which is not a backend route, so every
+  call 404'd.
 
 ### Added
 

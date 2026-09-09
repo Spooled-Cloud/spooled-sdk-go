@@ -162,10 +162,13 @@ type UsageWarning struct {
 	Severity string `json:"severity"`
 }
 
-// Usage retrieves usage information for an organization.
+// Usage retrieves usage information for the authenticated organization.
+// id is unused; the backend route is GET /organizations/usage (org from the
+// API key), not /organizations/{id}/usage.
 func (r *OrganizationsResource) Usage(ctx context.Context, id string) (*UsageInfo, error) {
+	_ = id
 	var result UsageInfo
-	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/organizations/%s/usage", id), &result); err != nil {
+	if err := r.base.Get(ctx, "/api/v1/organizations/usage", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
