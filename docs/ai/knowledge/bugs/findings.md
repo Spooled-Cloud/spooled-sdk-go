@@ -12,5 +12,6 @@
 | GS-08 | P1 | ~~`Jobs().List` RetryCount always 0; list JSON sends `attempt`~~ **FIXED** | `spooled/resources/jobs.go` |
 | GS-09 | P1 | ~~`BatchStatus` dropped `retry_count`/`queue_name`/`created_at`/`completed_at`~~ **FIXED** | `spooled/resources/jobs.go` |
 | GS-10 | P1 | ~~`Workflows().Get()` left `TotalJobs`/`CompletedJobs`/`FailedJobs` at 0~~ **FIXED** | `spooled/resources/workflows.go`; GET detail puts counts under `progress` |
+| GS-11 | P2 | ~~`Jobs().List` dropped `job_type` from summaries~~ **FIXED** | `spooled/resources/jobs.go`; `GET /jobs` sends `job_type` from payload |
 
 Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if caller wanted “omit means settings default ≠3”.

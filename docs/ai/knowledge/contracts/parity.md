@@ -14,4 +14,5 @@
 - Org usage is `GET /organizations/usage` (auth-scoped), not `/organizations/{id}/usage`.
 - Slug check is `GET /organizations/check-slug?slug=`, not `/organizations/check-slug/{slug}`. Body is `available`, `valid`, `error`, `suggestion`.
 - Job list/DLQ summaries send `attempt` and `max_retries`, not `retry_count`. `Jobs().List` maps `attempt` onto `Job.RetryCount`. Detail `GET /jobs/{id}` still uses `retry_count`.
+- `GET /jobs` summaries include `job_type` from `payload.job_type`. `Job.JobType` maps that field; GET detail copies it from `payload` when the top-level field is absent.
 - `GET /jobs/status` returns `{ id, status, queue_name, retry_count, created_at, completed_at }` (no `attempt`/`max_retries`). `BatchStatus` maps `retry_count` onto `RetryCount`.

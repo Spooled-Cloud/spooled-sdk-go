@@ -19,7 +19,7 @@ func intPtr(i int) *int { return &i }
 func TestJob_UnmarshalAttemptFromListJSON(t *testing.T) {
 	body := `{
 		"id":"job_1","queue_name":"emails","status":"pending","priority":0,
-		"attempt":2,"max_retries":5,"created_at":"2024-01-01T00:00:00Z"
+		"attempt":2,"max_retries":5,"job_type":"send_email","created_at":"2024-01-01T00:00:00Z"
 	}`
 	var job Job
 	if err := json.Unmarshal([]byte(body), &job); err != nil {
@@ -30,6 +30,25 @@ func TestJob_UnmarshalAttemptFromListJSON(t *testing.T) {
 	}
 	if job.MaxRetries != 5 {
 		t.Errorf("MaxRetries = %d, want 5", job.MaxRetries)
+	}
+	if job.JobType != "send_email" {
+		t.Errorf("JobType = %q, want send_email", job.JobType)
+	}
+}
+
+func TestJob_UnmarshalJobTypeFromPayloadOnGet(t *testing.T) {
+	body := `{
+		"id":"job_1","organization_id":"org_1","queue_name":"emails","status":"pending",
+		"payload":{"job_type":"send_email","to":"a@b.c"},"retry_count":1,"max_retries":3,
+		"priority":0,"timeout_seconds":300,
+		"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"
+	}`
+	var job Job
+	if err := json.Unmarshal([]byte(body), &job); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if job.JobType != "send_email" {
+		t.Errorf("JobType = %q, want send_email (from payload)", job.JobType)
 	}
 }
 

@@ -46,12 +46,15 @@ const (
 
 // Job represents a full job object.
 type Job struct {
-	ID                string         `json:"id"`
-	OrganizationID    string         `json:"organization_id"`
-	QueueName         string         `json:"queue_name"`
-	Status            JobStatus      `json:"status"`
-	Payload           map[string]any `json:"payload"`
-	Result            map[string]any `json:"result,omitempty"`
+	ID             string         `json:"id"`
+	OrganizationID string         `json:"organization_id"`
+	QueueName      string         `json:"queue_name"`
+	Status         JobStatus      `json:"status"`
+	Payload        map[string]any `json:"payload"`
+	Result         map[string]any `json:"result,omitempty"`
+	// JobType is payload.job_type on list summaries; GET /jobs/{id} has no
+	// column and UnmarshalJSON copies it from payload when present.
+	JobType           string         `json:"job_type,omitempty"`
 	RetryCount        int            `json:"retry_count"`
 	MaxRetries        int            `json:"max_retries"`
 	LastError         *string        `json:"last_error,omitempty"`
@@ -88,6 +91,11 @@ func (j *Job) UnmarshalJSON(data []byte) error {
 	}
 	if aux.Attempt != nil && j.RetryCount == 0 {
 		j.RetryCount = *aux.Attempt
+	}
+	if j.JobType == "" && j.Payload != nil {
+		if t, ok := j.Payload["job_type"].(string); ok {
+			j.JobType = t
+		}
 	}
 	return nil
 }
