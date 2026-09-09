@@ -17,5 +17,6 @@
 | GS-13 | P1 | ~~`GetPlans` typed nested `limits`/`price` the API never sends~~ **FIXED** | `spooled/resources/admin.go`; `GET /admin/plans` is a flat `PlanLimits` array |
 | GS-14 | P1 | ~~`Auth().Validate` dropped `claims` (org/queues/exp always empty)~~ **FIXED** | `spooled/resources/auth.go`; POST `/auth/validate` is `{valid,error,claims}` |
 | GS-15 | P1 | ~~`Auth().Logout` omitted refresh token so `/auth/refresh` survived~~ **FIXED** | `spooled/resources/auth.go`; POST `/auth/logout` body `refresh_token` |
+| GS-16 | P1 | ~~`Schedules().Create` left `IsActive` false: POST returns `{id,name,cron_expression,next_run_at}` unmarshalled into `Schedule`~~ **FIXED** | `spooled/resources/schedules.go`; create inserts `is_active TRUE` |
 
 Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if caller wanted “omit means settings default ≠3”.

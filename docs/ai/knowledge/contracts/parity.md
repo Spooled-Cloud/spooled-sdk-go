@@ -21,3 +21,4 @@
 - Job list/DLQ summaries send `attempt` and `max_retries`, not `retry_count`. `Jobs().List` maps `attempt` onto `Job.RetryCount`. Detail `GET /jobs/{id}` still uses `retry_count`.
 - `GET /jobs` summaries include `job_type` from `payload.job_type`. `Job.JobType` maps that field; GET detail copies it from `payload` when the top-level field is absent.
 - `GET /jobs/status` returns `{ id, status, queue_name, retry_count, created_at, completed_at }` (no `attempt`/`max_retries`). `BatchStatus` maps `retry_count` onto `RetryCount`.
+- `POST /schedules` returns `{ id, name, cron_expression, next_run_at }`, not a full `Schedule`. `Schedules().Create` backfills queue/timezone/payload from the request and sets `IsActive` true (the insert is always active).

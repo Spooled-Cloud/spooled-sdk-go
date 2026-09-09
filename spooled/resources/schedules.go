@@ -85,13 +85,55 @@ type CreateScheduleRequest struct {
 	Metadata        map[string]any `json:"metadata,omitempty"`
 }
 
+// createScheduleResponse is POST /schedules. The body is id/name/cron/next_run
+// only — unmarshalling it into Schedule left IsActive false (zero value) even
+// though the row is inserted active, and dropped queue/timezone/payload.
+type createScheduleResponse struct {
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	CronExpression string     `json:"cron_expression"`
+	NextRunAt      *time.Time `json:"next_run_at,omitempty"`
+}
+
 // Create creates a new schedule.
 func (r *SchedulesResource) Create(ctx context.Context, req *CreateScheduleRequest) (*Schedule, error) {
-	var result Schedule
-	if err := r.base.Post(ctx, "/api/v1/schedules", req, &result); err != nil {
+	var created createScheduleResponse
+	if err := r.base.Post(ctx, "/api/v1/schedules", req, &created); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return scheduleFromCreate(created, req), nil
+}
+
+func scheduleFromCreate(created createScheduleResponse, req *CreateScheduleRequest) *Schedule {
+	s := &Schedule{
+		ID:             created.ID,
+		Name:           created.Name,
+		CronExpression: created.CronExpression,
+		NextRunAt:      created.NextRunAt,
+		Timezone:       "UTC",
+		IsActive:       true,
+	}
+	if req == nil {
+		return s
+	}
+	s.QueueName = req.QueueName
+	s.PayloadTemplate = req.PayloadTemplate
+	s.Description = req.Description
+	s.Tags = req.Tags
+	s.Metadata = req.Metadata
+	if req.Timezone != nil && *req.Timezone != "" {
+		s.Timezone = *req.Timezone
+	}
+	if req.Priority != nil {
+		s.Priority = *req.Priority
+	}
+	if req.MaxRetries != nil {
+		s.MaxRetries = *req.MaxRetries
+	}
+	if req.TimeoutSeconds != nil {
+		s.TimeoutSeconds = *req.TimeoutSeconds
+	}
+	return s
 }
 
 // Get retrieves a specific schedule.
