@@ -58,7 +58,8 @@ func TestCreate_MapsPartialCreateResponseOntoSchedule(t *testing.T) {
 	if got.Timezone != tz {
 		t.Errorf("Timezone = %q, want %s", got.Timezone, tz)
 	}
-	if got.PayloadTemplate["job_type"] != "digest" {
+	payload, ok := got.PayloadTemplate.(map[string]any)
+	if !ok || payload["job_type"] != "digest" {
 		t.Errorf("PayloadTemplate = %v", got.PayloadTemplate)
 	}
 	if got.Priority != 5 {
@@ -66,5 +67,30 @@ func TestCreate_MapsPartialCreateResponseOntoSchedule(t *testing.T) {
 	}
 	if got.NextRunAt == nil {
 		t.Fatal("NextRunAt = nil")
+	}
+}
+
+func TestSchedule_UnmarshalNonObjectJSON(t *testing.T) {
+	body := `{
+		"id":"sch_1","organization_id":"org_1","name":"Nightly",
+		"cron_expression":"0 0 * * *","timezone":"UTC","queue_name":"mail",
+		"payload_template":["a"],"priority":0,"max_retries":3,"timeout_seconds":300,
+		"is_active":true,"run_count":0,"tags":["urgent"],"metadata":true,
+		"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"
+	}`
+	var got Schedule
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	payload, ok := got.PayloadTemplate.([]any)
+	if !ok || len(payload) != 1 {
+		t.Errorf("PayloadTemplate = %#v, want [a]", got.PayloadTemplate)
+	}
+	tags, ok := got.Tags.([]any)
+	if !ok || len(tags) != 1 {
+		t.Errorf("Tags = %#v, want [urgent]", got.Tags)
+	}
+	if got.Metadata != true {
+		t.Errorf("Metadata = %#v, want true", got.Metadata)
 	}
 }

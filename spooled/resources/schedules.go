@@ -21,25 +21,25 @@ func NewSchedulesResource(transport *httpx.Transport) *SchedulesResource {
 
 // Schedule represents a scheduled job.
 type Schedule struct {
-	ID              string         `json:"id"`
-	OrganizationID  string         `json:"organization_id"`
-	Name            string         `json:"name"`
-	Description     *string        `json:"description,omitempty"`
-	CronExpression  string         `json:"cron_expression"`
-	Timezone        string         `json:"timezone"`
-	QueueName       string         `json:"queue_name"`
-	PayloadTemplate map[string]any `json:"payload_template"`
-	Priority        int            `json:"priority"`
-	MaxRetries      int            `json:"max_retries"`
-	TimeoutSeconds  int            `json:"timeout_seconds"`
-	IsActive        bool           `json:"is_active"`
-	LastRunAt       *time.Time     `json:"last_run_at,omitempty"`
-	NextRunAt       *time.Time     `json:"next_run_at,omitempty"`
-	RunCount        int            `json:"run_count"`
-	Tags            map[string]any `json:"tags,omitempty"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID              string     `json:"id"`
+	OrganizationID  string     `json:"organization_id"`
+	Name            string     `json:"name"`
+	Description     *string    `json:"description,omitempty"`
+	CronExpression  string     `json:"cron_expression"`
+	Timezone        string     `json:"timezone"`
+	QueueName       string     `json:"queue_name"`
+	PayloadTemplate any        `json:"payload_template"`
+	Priority        int        `json:"priority"`
+	MaxRetries      int        `json:"max_retries"`
+	TimeoutSeconds  int        `json:"timeout_seconds"`
+	IsActive        bool       `json:"is_active"`
+	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
+	NextRunAt       *time.Time `json:"next_run_at,omitempty"`
+	RunCount        int        `json:"run_count"`
+	Tags            any        `json:"tags,omitempty"`
+	Metadata        any        `json:"metadata,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 // ListSchedulesParams are parameters for listing schedules.
@@ -72,17 +72,17 @@ func (r *SchedulesResource) List(ctx context.Context, params *ListSchedulesParam
 
 // CreateScheduleRequest is the request to create a schedule.
 type CreateScheduleRequest struct {
-	Name            string         `json:"name"`
-	Description     *string        `json:"description,omitempty"`
-	CronExpression  string         `json:"cron_expression"`
-	Timezone        *string        `json:"timezone,omitempty"`
-	QueueName       string         `json:"queue_name"`
-	PayloadTemplate map[string]any `json:"payload_template"`
-	Priority        *int           `json:"priority,omitempty"`
-	MaxRetries      *int           `json:"max_retries,omitempty"`
-	TimeoutSeconds  *int           `json:"timeout_seconds,omitempty"`
-	Tags            map[string]any `json:"tags,omitempty"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
+	Name            string  `json:"name"`
+	Description     *string `json:"description,omitempty"`
+	CronExpression  string  `json:"cron_expression"`
+	Timezone        *string `json:"timezone,omitempty"`
+	QueueName       string  `json:"queue_name"`
+	PayloadTemplate any     `json:"payload_template"`
+	Priority        *int    `json:"priority,omitempty"`
+	MaxRetries      *int    `json:"max_retries,omitempty"`
+	TimeoutSeconds  *int    `json:"timeout_seconds,omitempty"`
+	Tags            any     `json:"tags,omitempty"`
+	Metadata        any     `json:"metadata,omitempty"`
 }
 
 // createScheduleResponse is POST /schedules. The body is id/name/cron/next_run
@@ -147,18 +147,18 @@ func (r *SchedulesResource) Get(ctx context.Context, id string) (*Schedule, erro
 
 // UpdateScheduleRequest is the request to update a schedule.
 type UpdateScheduleRequest struct {
-	Name            *string        `json:"name,omitempty"`
-	Description     *string        `json:"description,omitempty"`
-	CronExpression  *string        `json:"cron_expression,omitempty"`
-	Timezone        *string        `json:"timezone,omitempty"`
-	QueueName       *string        `json:"queue_name,omitempty"`
-	PayloadTemplate map[string]any `json:"payload_template,omitempty"`
-	Priority        *int           `json:"priority,omitempty"`
-	MaxRetries      *int           `json:"max_retries,omitempty"`
-	TimeoutSeconds  *int           `json:"timeout_seconds,omitempty"`
-	IsActive        *bool          `json:"is_active,omitempty"`
-	Tags            map[string]any `json:"tags,omitempty"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
+	Name            *string `json:"name,omitempty"`
+	Description     *string `json:"description,omitempty"`
+	CronExpression  *string `json:"cron_expression,omitempty"`
+	Timezone        *string `json:"timezone,omitempty"`
+	QueueName       *string `json:"queue_name,omitempty"`
+	PayloadTemplate any     `json:"payload_template,omitempty"`
+	Priority        *int    `json:"priority,omitempty"`
+	MaxRetries      *int    `json:"max_retries,omitempty"`
+	TimeoutSeconds  *int    `json:"timeout_seconds,omitempty"`
+	IsActive        *bool   `json:"is_active,omitempty"`
+	Tags            any     `json:"tags,omitempty"`
+	Metadata        any     `json:"metadata,omitempty"`
 }
 
 // Update updates a schedule.
