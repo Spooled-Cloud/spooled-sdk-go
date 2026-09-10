@@ -213,16 +213,26 @@ type VerifyEmailRequest struct {
 	Code  string `json:"code"`
 }
 
-// VerifyEmailResponse is the response from verifying an email login.
+// VerifyEmailResponse is POST /auth/email/verify — tagged `{type: login|signup, ...}`.
+//
+// Login sends access/refresh tokens. Signup (no account yet) sends
+// signup_token and never access_token.
 type VerifyEmailResponse struct {
-	AccessToken      string `json:"access_token"`
-	RefreshToken     string `json:"refresh_token"`
-	TokenType        string `json:"token_type"`
-	ExpiresIn        int    `json:"expires_in"`
-	RefreshExpiresIn int    `json:"refresh_expires_in"`
+	Type             string `json:"type"`
+	AccessToken      string `json:"access_token,omitempty"`
+	RefreshToken     string `json:"refresh_token,omitempty"`
+	TokenType        string `json:"token_type,omitempty"`
+	ExpiresIn        int    `json:"expires_in,omitempty"`
+	RefreshExpiresIn int    `json:"refresh_expires_in,omitempty"`
+	SignupToken      string `json:"signup_token,omitempty"`
+	Email            string `json:"email,omitempty"`
 }
 
-// VerifyEmail verifies an email login code and returns tokens.
+// VerifyEmail verifies an email login code.
+//
+// Existing accounts return type "login" with tokens. New emails return type
+// "signup" with signup_token; mapping that onto token fields dropped the
+// token needed for POST /auth/signup/complete.
 func (r *AuthResource) VerifyEmail(ctx context.Context, req *VerifyEmailRequest) (*VerifyEmailResponse, error) {
 	var result VerifyEmailResponse
 	if err := r.base.Post(ctx, "/api/v1/auth/email/verify", req, &result); err != nil {

@@ -114,11 +114,14 @@ type VerifyEmailRequest struct {
 	Code  string `json:"code"`
 }
 
-// VerifyEmailResponse is the response from verifying an email login.
+// VerifyEmailResponse is POST /auth/email/verify — tagged `{type: login|signup, ...}`.
 type VerifyEmailResponse struct {
-	AccessToken      string `json:"access_token"`
-	RefreshToken     string `json:"refresh_token"`
-	TokenType        string `json:"token_type"`
-	ExpiresIn        int    `json:"expires_in"`
-	RefreshExpiresIn int    `json:"refresh_expires_in"`
+	Type             string `json:"type"`
+	AccessToken      string `json:"access_token,omitempty"`
+	RefreshToken     string `json:"refresh_token,omitempty"`
+	TokenType        string `json:"token_type,omitempty"`
+	ExpiresIn        int    `json:"expires_in,omitempty"`
+	RefreshExpiresIn int    `json:"refresh_expires_in,omitempty"`
+	SignupToken      string `json:"signup_token,omitempty"`
+	Email            string `json:"email,omitempty"`
 }

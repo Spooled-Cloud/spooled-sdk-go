@@ -154,3 +154,61 @@ func TestLogout_PrefersExplicitRefreshToken(t *testing.T) {
 		t.Errorf("body refresh_token = %q, want rt_explicit", gotBody["refresh_token"])
 	}
 }
+
+func TestVerifyEmail_MapsSignupToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/auth/email/verify" {
+			t.Errorf("path = %q, want /api/v1/auth/email/verify", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"signup","signup_token":"signup-token-123","email":"new@user.com","expires_in":900}`))
+	}))
+	defer server.Close()
+
+	res := NewAuthResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	got, err := res.VerifyEmail(context.Background(), &VerifyEmailRequest{Email: "new@user.com", Code: "123456"})
+	if err != nil {
+		t.Fatalf("VerifyEmail: %v", err)
+	}
+	if got.Type != "signup" {
+		t.Errorf("Type = %q, want signup", got.Type)
+	}
+	if got.SignupToken != "signup-token-123" {
+		t.Errorf("SignupToken = %q, want signup-token-123", got.SignupToken)
+	}
+	if got.Email != "new@user.com" {
+		t.Errorf("Email = %q, want new@user.com", got.Email)
+	}
+	if got.ExpiresIn != 900 {
+		t.Errorf("ExpiresIn = %d, want 900", got.ExpiresIn)
+	}
+	if got.AccessToken != "" {
+		t.Errorf("AccessToken = %q, want empty", got.AccessToken)
+	}
+}
+
+func TestVerifyEmail_MapsLoginTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"login","access_token":"at_1","refresh_token":"rt_1","token_type":"Bearer","expires_in":86400,"refresh_expires_in":2592000}`))
+	}))
+	defer server.Close()
+
+	res := NewAuthResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	got, err := res.VerifyEmail(context.Background(), &VerifyEmailRequest{Email: "user@example.com", Code: "123456"})
+	if err != nil {
+		t.Fatalf("VerifyEmail: %v", err)
+	}
+	if got.Type != "login" {
+		t.Errorf("Type = %q, want login", got.Type)
+	}
+	if got.AccessToken != "at_1" {
+		t.Errorf("AccessToken = %q, want at_1", got.AccessToken)
+	}
+	if got.RefreshToken != "rt_1" {
+		t.Errorf("RefreshToken = %q, want rt_1", got.RefreshToken)
+	}
+	if got.SignupToken != "" {
+		t.Errorf("SignupToken = %q, want empty", got.SignupToken)
+	}
+}

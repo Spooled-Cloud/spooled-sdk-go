@@ -11,6 +11,7 @@
 - `GET /jobs/{id}/dependencies` is `{ job_id, dependencies, dependents, dependencies_met }` with `{ job_id, queue_name, status }` edges, not a nested `job` object or string id lists.
 - Email availability is `GET /auth/check-email?email=`, not `POST /auth/email/check`. The body is `available`, `exists`, `signup_enabled`.
 - Email login start is `POST /auth/email/start` → `{ message, email_sent_to }`, not `{ success, message }`.
+- `POST /auth/email/verify` is tagged `{type: login, access_token, ...}` or `{type: signup, signup_token, email, expires_in}`. `Auth().VerifyEmail` maps both; login-only fields dropped `signup_token`.
 - `POST /auth/validate` is `{ valid, error?, claims? }`. Claims are `org_id`, `api_key_id`, `queues`, `exp`. `ValidateResponse.UnmarshalJSON` maps those onto `OrganizationID` / `APIKeyID` / `Queues` / `ExpiresAt`.
 - `POST /auth/logout` blacklists the access token from `Authorization`. The refresh JWT stays usable until expiry unless `refresh_token` is in the body. `Auth().Logout` sends the stored refresh token (or an explicit argument).
 - Org webhook token is `GET/POST /organizations/webhook-token` (auth-scoped), not `/organizations/{id}/webhook-token`. Clear is `POST /organizations/webhook-token/clear` with `confirm: true`, not DELETE.

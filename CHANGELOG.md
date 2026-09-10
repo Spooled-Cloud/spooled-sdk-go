@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Auth().VerifyEmail` now maps the tagged `{type: login|signup}` body,
+  including `signup_token` for new emails. It previously unmarshalled only
+  token fields, so a signup response left `AccessToken` empty and dropped
+  the token needed for `POST /auth/signup/complete`.
 - `Ingest().Custom` / `CustomWithToken` now map OpenAPI `WebhookResponse`
   (`job_id`, `queue_name`, `status`). They previously required `{job_id,
   created}` (empty 200 looked like failure) then returned `error` only and
