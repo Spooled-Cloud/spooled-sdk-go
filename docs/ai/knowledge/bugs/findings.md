@@ -20,5 +20,6 @@
 | GS-16 | P1 | ~~`Schedules().Create` left `IsActive` false: POST returns `{id,name,cron_expression,next_run_at}` unmarshalled into `Schedule`~~ **FIXED** | `spooled/resources/schedules.go`; create inserts `is_active TRUE` |
 | GS-17 | P1 | ~~`Queues().UpdateConfig` PUT `/queues/{name}` (405); config is PUT `/queues/{name}/config`~~ **FIXED** | `spooled/resources/queues.go` |
 | GS-18 | P1 | ~~`Metrics().Get` JSON-decoded `/api/v1/metrics`; scrape is `GET /metrics` Prometheus text~~ **FIXED** | `spooled/resources/metrics.go` |
+| GS-19 | P1 | ~~`Ingest().CustomWithToken` treated empty 200 as error; `Custom` unmarshalled `{job_id,created}` the API never sends~~ **FIXED** | `spooled/resources/ingest.go`; handler returns `StatusCode::OK` |
 
 Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if caller wanted “omit means settings default ≠3”.

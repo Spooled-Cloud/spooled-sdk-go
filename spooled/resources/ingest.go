@@ -32,24 +32,21 @@ type CustomWebhookRequest struct {
 	Priority       *int           `json:"priority,omitempty"`
 }
 
-// CustomWebhookResponse is the response from ingesting a custom webhook.
-type CustomWebhookResponse struct {
-	JobID   string `json:"job_id"`
-	Created bool   `json:"created"`
-}
-
 // Custom ingests a custom webhook for an organization.
-func (r *IngestResource) Custom(ctx context.Context, orgID string, req *CustomWebhookRequest) (*CustomWebhookResponse, error) {
-	var result CustomWebhookResponse
-	if err := r.base.Post(ctx, fmt.Sprintf("/api/v1/webhooks/%s/custom", orgID), req, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+//
+// POST /webhooks/{org_id}/custom returns 200 with an empty body, not
+// {job_id, created}.
+func (r *IngestResource) Custom(ctx context.Context, orgID string, req *CustomWebhookRequest) error {
+	return r.base.Post(ctx, fmt.Sprintf("/api/v1/webhooks/%s/custom", orgID), req, nil)
 }
 
 // CustomWithToken ingests a custom webhook using a webhook token via the X-Webhook-Token header.
-func (r *IngestResource) CustomWithToken(ctx context.Context, orgID, webhookToken string, req *CustomWebhookRequest) (*CustomWebhookResponse, error) {
-	resp, err := r.base.transport.Do(ctx, &httpx.Request{
+//
+// POST /webhooks/{org_id}/custom returns 200 with an empty body, not
+// {job_id, created}. Treating that empty body as an error made a successful
+// ingest look like a failure.
+func (r *IngestResource) CustomWithToken(ctx context.Context, orgID, webhookToken string, req *CustomWebhookRequest) error {
+	_, err := r.base.transport.Do(ctx, &httpx.Request{
 		Method: http.MethodPost,
 		Path:   fmt.Sprintf("/api/v1/webhooks/%s/custom", orgID),
 		Body:   req,
@@ -57,17 +54,7 @@ func (r *IngestResource) CustomWithToken(ctx context.Context, orgID, webhookToke
 			"X-Webhook-Token": webhookToken,
 		},
 	})
-	if err != nil {
-		return nil, err
-	}
-	out, err := httpx.JSON[CustomWebhookResponse](resp)
-	if err != nil {
-		return nil, err
-	}
-	if out == nil {
-		return nil, fmt.Errorf("empty response")
-	}
-	return out, nil
+	return err
 }
 
 // GitHubIngestOptions configures GitHub webhook ingestion.
