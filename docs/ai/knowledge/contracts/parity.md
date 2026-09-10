@@ -1,7 +1,7 @@
 # Parity notes (Go)
 
 - **Only** SDK with working worker progress → `POST /jobs/{id}/progress`.
-- `POST /webhooks/{org_id}/custom` returns 200 empty, not `{job_id, created}`. `Ingest().Custom` / `CustomWithToken` return `error` only. There is no `/webhooks/{org_id}/github` or `/stripe`.
+- `POST /webhooks/{org_id}/custom` returns `{ job_id, queue_name, status }` (OpenAPI `WebhookResponse`). `Ingest().Custom` / `CustomWithToken` map that; empty 200 leaves the fields unset. There is no `/webhooks/{org_id}/github` or `/stripe`.
 - Worker list has a summary-specific `ListSummaries()` API; legacy `List()` maps summaries into `Worker` values for compatibility.
 - Full gRPC streams.
 - Zero-value gRPC fields are a footgun; document for callers.

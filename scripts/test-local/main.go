@@ -3625,7 +3625,7 @@ func testWebhookIngestion(client *spooled.Client) {
 	queueName := fmt.Sprintf("%s-ingest", testPrefix)
 
 	r.Run("Ingest.Custom enqueues a job", func() {
-		err := client.Ingest().Custom(ctx, orgID, &resources.CustomWebhookRequest{
+		resp, err := client.Ingest().Custom(ctx, orgID, &resources.CustomWebhookRequest{
 			QueueName: queueName,
 			Payload:   map[string]any{"source": "custom", "ts": time.Now().Unix()},
 		})
@@ -3634,7 +3634,11 @@ func testWebhookIngestion(client *spooled.Client) {
 			log(fmt.Sprintf("Ingest.Custom not available: %v", err))
 			return
 		}
-		log("Ingest.Custom accepted (empty 200)")
+		if resp != nil && resp.JobID != "" {
+			log(fmt.Sprintf("Ingest.Custom job: %s", resp.JobID))
+		} else {
+			log("Ingest.Custom accepted")
+		}
 	})
 
 	r.Run("Ingest.CustomWithToken uses X-Webhook-Token", func() {
@@ -3658,7 +3662,7 @@ func testWebhookIngestion(client *spooled.Client) {
 			return
 		}
 
-		err = client.Ingest().CustomWithToken(ctx, orgID, token, &resources.CustomWebhookRequest{
+		resp, err := client.Ingest().CustomWithToken(ctx, orgID, token, &resources.CustomWebhookRequest{
 			QueueName: queueName,
 			Payload:   map[string]any{"source": "custom-token", "ts": time.Now().Unix()},
 		})
@@ -3666,6 +3670,10 @@ func testWebhookIngestion(client *spooled.Client) {
 			log(fmt.Sprintf("Ingest.CustomWithToken not available: %v", err))
 			return
 		}
-		log("Ingest.CustomWithToken accepted (empty 200)")
+		if resp != nil && resp.JobID != "" {
+			log(fmt.Sprintf("Ingest.CustomWithToken job: %s", resp.JobID))
+		} else {
+			log("Ingest.CustomWithToken accepted")
+		}
 	})
 }

@@ -43,13 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `Ingest().Custom` / `CustomWithToken` now return `error` only.
-  `POST /webhooks/{org_id}/custom` is an empty 200, not `{job_id, created}`.
-  `CustomWithToken` previously treated that empty body as an error, so a
-  successful ingest looked like a failure.
-
-**Breaking:** `Ingest().Custom` and `CustomWithToken` no longer return
-`*CustomWebhookResponse`. The endpoint never sent `job_id` or `created`.
+- `Ingest().Custom` / `CustomWithToken` now map OpenAPI `WebhookResponse`
+  (`job_id`, `queue_name`, `status`). They previously required `{job_id,
+  created}` (empty 200 looked like failure) then returned `error` only and
+  dropped the job id the API actually sends. An empty 200 still maps to a
+  zero response.
 - `Auth().Logout` now sends the refresh token in the body. Without it the
   access token is blacklisted but `/auth/refresh` still mints a new pair, so
   logout did not end the session. The stored refresh token is used when the
