@@ -5,6 +5,103 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-10
+
+A contract-parity pass against the backend: every fix below is a place where
+this SDK's route, request shape, or response mapping disagreed with what the API
+actually serves. Pair it with backend `0.1.112`, which supplies the response
+fields several of these now read.
+
+### Breaking
+
+- **JSON-valued fields are now `any` instead of `map[string]any`.** The API
+  types job payloads, results, tags, schedule payload templates, workflow job
+  payloads and worker/workflow metadata as `serde_json::Value`, so a JSON
+  array, string, number or boolean is valid in all of them. Modelling these as
+  a Go map meant `encoding/json` refused to decode such a value at all —
+  `GET /jobs/{id}` on a job with an array payload returned an error rather than
+  the job — and the SDK could not send one either. Affected exported fields:
+  `Job.Payload` / `.Result` / `.Tags`, `ClaimedJob.Payload`,
+  `CreateJobRequest.Payload` / `.Tags`, `BulkJobItem.Payload`,
+  `CompleteJobRequest.Result`, `WorkflowJobDefinition.Payload`, and the
+  schedule payload/tags/metadata fields, in both `spooled/types` and
+  `spooled/resources`. Code that constructs these with a map literal still
+  compiles; code that indexes them directly needs a type assertion first
+  (`payload, ok := job.Payload.(map[string]any)`).
+- **`resources.CustomWebhookResponse.Created` was removed**, replaced by
+  `QueueName` and `Status`. The field was never populated: the endpoint
+  answered `200` with an empty body, so `Created` was always `false`.
+
+### Fixed
+
+- `Ingest().Custom` / `CustomWithToken` now map OpenAPI `WebhookResponse`
+  (`job_id`, `queue_name`, `status`). They previously required `{job_id,
+  created}` (an empty 200 looked like a failure), then returned `error` only and
+  dropped the job id the API actually sends. An empty 200 — a backend older than
+  `0.1.112` — still maps to a zero response rather than an error.
+- `Auth().VerifyEmail` now maps the tagged `{type: login|signup}` body,
+  including `signup_token` for new emails. It previously unmarshalled only
+  token fields, so a signup response left `AccessToken` empty and dropped
+  the token needed for `POST /auth/signup/complete`.
+- `Auth().Logout` now sends the refresh token in the body. Without it the
+  access token is blacklisted but `/auth/refresh` still mints a new pair, so
+  logout did not end the session. The stored refresh token is used when the
+  argument is omitted, matching the Node, PHP, and Python SDKs.
+- `Auth().Validate` now maps `claims.org_id` / `api_key_id` / `queues` / `exp`
+  onto `OrganizationID` / `APIKeyID` / `Queues` / `ExpiresAt`. It previously
+  looked for top-level `organization_id` and `expires_at`, which the API never
+  sends, so a valid token unmarshalled as empty IDs.
+- `Auth().CheckEmail` now calls `GET /auth/check-email?email=`. It previously
+  POSTed to `/auth/email/check`, which is not a backend route, so every check
+  404'd. The response now also reads `available` and `signup_enabled`.
+- `Auth().StartEmailLogin` now reads `message` and `email_sent_to` from
+  `POST /auth/email/start`. It previously typed a `success` field the API never
+  sends, so a successful send unmarshalled as `Success: false`.
+- `Organizations().GetWebhookToken` / `RegenerateWebhookToken` now call
+  `GET/POST /organizations/webhook-token`. They previously used
+  `/organizations/{id}/webhook-token`, which is not a backend route, so every
+  call 404'd. `ClearWebhookToken` now POSTs `/organizations/webhook-token/clear`
+  with `confirm: true` instead of DELETE on the missing id path.
+- `Organizations().Usage` now calls `GET /organizations/usage`. It previously
+  used `/organizations/{id}/usage`, which is not a backend route, so every
+  call 404'd.
+- `Organizations().CheckSlug` now calls `GET /organizations/check-slug?slug=`.
+  It previously requested `/organizations/check-slug/{slug}`, which is not a
+  backend route, so every check 404'd. The response now reads `valid`,
+  `error`, and `suggestion` instead of `slug`/`message`, which the API never
+  sends.
+- `Jobs().List` / `Jobs().DLQ().List` now map `attempt` onto `RetryCount`.
+  List/DLQ summaries send `attempt`, not `retry_count`, so every listed job
+  looked like it had never been retried. They also read the `job_type` and
+  `last_error` that backend `0.1.112` adds to `JobSummary`.
+- `Jobs().BatchStatus` now reads `queue_name`, `retry_count`, `created_at`,
+  and `completed_at`. `GET /jobs/status` always sent those fields; the SDK
+  previously decoded only `id` and `status`.
+- `Queues().UpdateConfig` now sends `PUT /queues/{name}/config`. It previously
+  PUT to `/queues/{name}`, which is not a backend route.
+- `Workflows().Get` now reads the workflow's jobs from `GET /workflows/{id}`,
+  and `Workflows().Jobs().GetDependencies` unmarshals
+  `GET /jobs/{id}/dependencies` in the shape the API sends. Workflow progress
+  counts are read from `progress`, which is where `total`/`completed`/`failed`
+  live; there is no top-level `total_jobs`.
+- `Schedules().Create` maps its response onto an active schedule instead of
+  leaving `IsActive` false on a schedule the server had already started.
+- `Admin().UpdateOrganization` now sends `PATCH /admin/organizations/{id}` (the
+  route is PATCH, not PUT) and `Admin().DeleteOrganization` sends the
+  `hard_delete` query parameter.
+- `Admin().GetStats` now reads nested `{organizations, jobs, workers, system}`
+  from `GET /admin/stats`. It previously typed flat `total_organizations` /
+  `total_jobs` fields the API never sends, so every count unmarshalled as 0.
+- `Admin().GetPlans` now decodes the flat `PlanLimits` array from
+  `GET /admin/plans`. It previously typed a nested `{limits, price, description}`
+  wrapper the API never sends, so every limit unmarshalled as 0.
+- `Metrics()` scrapes `GET /metrics` as Prometheus text rather than trying to
+  decode it as JSON.
+
+### Changed
+
+- Regenerated `internal/openapi` types from the current backend OpenAPI spec.
+
 ## [1.2.0] - 2026-08-16
 
 ### Added
@@ -38,102 +135,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoints. This SDK sends credentials as an `Authorization` header on REST;
   SSE and WebSocket connections continue to use the query string, which the
   backend still supports for those routes.
-
-## [Unreleased]
-
-### Fixed
-
-- `Schedule.PayloadTemplate` / `Tags` / `Metadata` now accept any JSON. They
-  were `map[string]any`, so `GET /schedules/{id}` failed to unmarshal a
-  string, array, or boolean (`serde_json::Value`).
-- `Job.Payload` / `Job.Result` / `Job.Tags` and claim/complete now accept any
-  JSON. They were `map[string]any`, so `GET /jobs/{id}` and claim failed to
-  unmarshal a string, array, or boolean (`serde_json::Value`).
-- `Auth().VerifyEmail` now maps the tagged `{type: login|signup}` body,
-  including `signup_token` for new emails. It previously unmarshalled only
-  token fields, so a signup response left `AccessToken` empty and dropped
-  the token needed for `POST /auth/signup/complete`.
-- `Ingest().Custom` / `CustomWithToken` now map OpenAPI `WebhookResponse`
-  (`job_id`, `queue_name`, `status`). They previously required `{job_id,
-  created}` (empty 200 looked like failure) then returned `error` only and
-  dropped the job id the API actually sends. An empty 200 still maps to a
-  zero response.
-- `Auth().Logout` now sends the refresh token in the body. Without it the
-  access token is blacklisted but `/auth/refresh` still mints a new pair, so
-  logout did not end the session. The stored refresh token is used when the
-  argument is omitted, matching the Node, PHP, and Python SDKs.
-- `Auth().Validate` now maps `claims.org_id` / `api_key_id` / `queues` / `exp`
-  onto `OrganizationID` / `APIKeyID` / `Queues` / `ExpiresAt`. It previously
-  looked for top-level `organization_id` and `expires_at`, which the API never
-  sends, so a valid token unmarshalled as empty IDs.
-- `Auth().CheckEmail` now calls `GET /auth/check-email?email=`. It previously
-  POSTed to `/auth/email/check`, which is not a backend route, so every check
-  404'd. The response now also reads `available` and `signup_enabled`.
-- `Auth().StartEmailLogin` now reads `message` and `email_sent_to` from
-  `POST /auth/email/start`. It previously typed a `success` field the API never
-  sends, so a successful send unmarshalled as `Success: false`.
-- `Organizations().GetWebhookToken` / `RegenerateWebhookToken` now call
-  `GET/POST /organizations/webhook-token`. They previously used
-  `/organizations/{id}/webhook-token`, which is not a backend route, so every
-  call 404'd. `ClearWebhookToken` now POSTs `/organizations/webhook-token/clear`
-  with `confirm: true` instead of DELETE on the missing id path.
-- `Organizations().Usage` now calls `GET /organizations/usage`. It previously
-  used `/organizations/{id}/usage`, which is not a backend route, so every
-  call 404'd.
-- `Organizations().CheckSlug` now calls `GET /organizations/check-slug?slug=`.
-  It previously requested `/organizations/check-slug/{slug}`, which is not a
-  backend route, so every check 404'd. The response now reads `valid`,
-  `error`, and `suggestion` instead of `slug`/`message`, which the API never
-  sends.
-- `Jobs().List` / `Jobs().DLQ().List` now map `attempt` onto `RetryCount`.
-  List/DLQ summaries send `attempt`, not `retry_count`, so every listed job
-  looked like it had never been retried.
-- `Jobs().BatchStatus` now reads `queue_name`, `retry_count`, `created_at`,
-  and `completed_at`. `GET /jobs/status` always sent those fields; the SDK
-  previously decoded only `id` and `status`.
-- `Admin().GetStats` now reads nested `{organizations, jobs, workers, system}`
-  from `GET /admin/stats`. It previously typed flat `total_organizations` /
-  `total_jobs` fields the API never sends, so every count unmarshalled as 0.
-- `Admin().GetPlans` now decodes the flat `PlanLimits` array from
-  `GET /admin/plans`. It previously typed a nested `{limits, price, description}`
-  wrapper the API never sends, so every limit unmarshalled as 0.
-
-### Added
-
-- **Stable worker identity.** `worker.Options.WorkerID` and
-  `resources.RegisterWorkerRequest.WorkerID` carry the optional `worker_id`
-  (1-128 characters from `[A-Za-z0-9._-]`) that makes registration an upsert.
-  Pin it and a restarting worker reuses one row; leave it empty and the server
-  mints a UUID, so each restart leaves the old row against the plan worker cap
-  until the stale-worker reaper clears it (~2 minutes) — enough for a
-  crash-looping worker on a tight plan to 429 its own registrations.
-  Re-registering an ID the organization already owns is not charged against the
-  cap; an ID owned by another organization is rejected with 409.
-- **Clearing an outgoing webhook's signing secret.**
-  `UpdateOutgoingWebhookRequest.ClearSecret` sends the explicit `"secret": null`
-  that removes the secret; deliveries then go out unsigned with no
-  `X-Spooled-Signature` header. A nil `Secret` is still omitted from the body
-  and keeps the current secret, and setting `Secret` together with
-  `ClearSecret` is rejected before the request is sent.
-
-### Changed
-
-- `OutgoingWebhook.LastStatus` documents its third value, `"auto_disabled"`,
-  set when 20 consecutive failed deliveries make the server disable the webhook
-  and stop sending it events. Re-enable with
-  `Update(..., &UpdateOutgoingWebhookRequest{Enabled: ptr(true)})`, which is
-  charged against the plan webhook cap and can fail with 429 `QUOTA_EXCEEDED`.
-- `OutgoingWebhook.FailureCount` counts consecutive failed *deliveries* rather
-  than retry attempts, so it is roughly 5x smaller than a per-attempt count for
-  the same real-world failures — recheck any threshold built on it. A
-  successful delivery resets it to 0, including a successful manual retry.
-- `Webhooks().Deliveries()` documents that history is retained, not permanent:
-  only the newest 100 deliveries per webhook are readable and rows are removed
-  once past the plan's history window (free 1 day, starter 7, pro 30,
-  enterprise 90).
-- `APIKey.LastUsed` documents that the server records it at most once per key
-  per 5 minutes, so it lags real usage and must not be read as a live timestamp.
-- Regenerated `internal/openapi` types from the current backend OpenAPI spec.
 
 ## [1.1.0] - 2026-07-19
 

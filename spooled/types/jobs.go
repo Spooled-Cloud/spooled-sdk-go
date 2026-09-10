@@ -16,18 +16,22 @@ const (
 )
 
 // CreateJobRequest is the request to create a new job.
+//
+// Payload and Tags are `any`, not `map[string]any`: the API stores both as
+// `serde_json::Value`, so a JSON array, string, number or boolean is a valid
+// payload, and a map type could neither send nor round-trip one.
 type CreateJobRequest struct {
-	QueueName         string      `json:"queue_name"`
-	Payload           JsonObject  `json:"payload"`
-	Priority          *int        `json:"priority,omitempty"`
-	MaxRetries        *int        `json:"max_retries,omitempty"`
-	TimeoutSeconds    *int        `json:"timeout_seconds,omitempty"`
-	ScheduledAt       *time.Time  `json:"scheduled_at,omitempty"`
-	ExpiresAt         *time.Time  `json:"expires_at,omitempty"`
-	IdempotencyKey    *string     `json:"idempotency_key,omitempty"`
-	Tags              *JsonObject `json:"tags,omitempty"`
-	ParentJobID       *string     `json:"parent_job_id,omitempty"`
-	CompletionWebhook *string     `json:"completion_webhook,omitempty"`
+	QueueName         string     `json:"queue_name"`
+	Payload           any        `json:"payload"`
+	Priority          *int       `json:"priority,omitempty"`
+	MaxRetries        *int       `json:"max_retries,omitempty"`
+	TimeoutSeconds    *int       `json:"timeout_seconds,omitempty"`
+	ScheduledAt       *time.Time `json:"scheduled_at,omitempty"`
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
+	IdempotencyKey    *string    `json:"idempotency_key,omitempty"`
+	Tags              any        `json:"tags,omitempty"`
+	ParentJobID       *string    `json:"parent_job_id,omitempty"`
+	CompletionWebhook *string    `json:"completion_webhook,omitempty"`
 }
 
 // CreateJobResponse is the response from creating a job.
@@ -38,33 +42,33 @@ type CreateJobResponse struct {
 
 // Job represents a full job object.
 type Job struct {
-	ID                string      `json:"id"`
-	OrganizationID    string      `json:"organization_id"`
-	QueueName         string    `json:"queue_name"`
-	Status            JobStatus `json:"status"`
-	Payload           any       `json:"payload"`
-	Result            any       `json:"result,omitempty"`
-	RetryCount        int         `json:"retry_count"`
-	MaxRetries        int         `json:"max_retries"`
-	LastError         *string     `json:"last_error,omitempty"`
-	CreatedAt         time.Time   `json:"created_at"`
-	ScheduledAt       *time.Time  `json:"scheduled_at,omitempty"`
-	StartedAt         *time.Time  `json:"started_at,omitempty"`
-	CompletedAt       *time.Time  `json:"completed_at,omitempty"`
-	ExpiresAt         *time.Time  `json:"expires_at,omitempty"`
-	Priority          int `json:"priority"`
-	Tags              any `json:"tags,omitempty"`
-	TimeoutSeconds    int `json:"timeout_seconds"`
-	ParentJobID       *string     `json:"parent_job_id,omitempty"`
-	CompletionWebhook *string     `json:"completion_webhook,omitempty"`
-	AssignedWorkerID  *string     `json:"assigned_worker_id,omitempty"`
-	LeaseID           *string     `json:"lease_id,omitempty"`
-	LeaseExpiresAt    *time.Time  `json:"lease_expires_at,omitempty"`
-	IdempotencyKey    *string     `json:"idempotency_key,omitempty"`
-	UpdatedAt         time.Time   `json:"updated_at"`
-	WorkflowID        *string     `json:"workflow_id,omitempty"`
-	DependencyMode    *string     `json:"dependency_mode,omitempty"`
-	DependenciesMet   *bool       `json:"dependencies_met,omitempty"`
+	ID                string     `json:"id"`
+	OrganizationID    string     `json:"organization_id"`
+	QueueName         string     `json:"queue_name"`
+	Status            JobStatus  `json:"status"`
+	Payload           any        `json:"payload"`
+	Result            any        `json:"result,omitempty"`
+	RetryCount        int        `json:"retry_count"`
+	MaxRetries        int        `json:"max_retries"`
+	LastError         *string    `json:"last_error,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	ScheduledAt       *time.Time `json:"scheduled_at,omitempty"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	CompletedAt       *time.Time `json:"completed_at,omitempty"`
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
+	Priority          int        `json:"priority"`
+	Tags              any        `json:"tags,omitempty"`
+	TimeoutSeconds    int        `json:"timeout_seconds"`
+	ParentJobID       *string    `json:"parent_job_id,omitempty"`
+	CompletionWebhook *string    `json:"completion_webhook,omitempty"`
+	AssignedWorkerID  *string    `json:"assigned_worker_id,omitempty"`
+	LeaseID           *string    `json:"lease_id,omitempty"`
+	LeaseExpiresAt    *time.Time `json:"lease_expires_at,omitempty"`
+	IdempotencyKey    *string    `json:"idempotency_key,omitempty"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	WorkflowID        *string    `json:"workflow_id,omitempty"`
+	DependencyMode    *string    `json:"dependency_mode,omitempty"`
+	DependenciesMet   *bool      `json:"dependencies_met,omitempty"`
 }
 
 // JobSummary is a summary of a job.
@@ -143,9 +147,10 @@ type ClaimJobsResponse struct {
 
 // ClaimedJob is a job that has been claimed by a worker.
 type ClaimedJob struct {
-	ID             string     `json:"id"`
-	QueueName      string     `json:"queue_name"`
-	Payload        JsonObject `json:"payload"`
+	ID        string `json:"id"`
+	QueueName string `json:"queue_name"`
+	// Any JSON, matching resources.ClaimedJob and the API's serde_json::Value.
+	Payload        any        `json:"payload"`
 	RetryCount     int        `json:"retry_count"`
 	MaxRetries     int        `json:"max_retries"`
 	TimeoutSeconds int        `json:"timeout_seconds"`
@@ -195,8 +200,11 @@ type BulkEnqueueRequest struct {
 }
 
 // BulkJobItem is an individual job in a bulk enqueue request.
+//
+// Payload is `any` for the same reason as CreateJobRequest.Payload: the API
+// field is `serde_json::Value`, not an object.
 type BulkJobItem struct {
-	Payload        JsonObject `json:"payload"`
+	Payload        any        `json:"payload"`
 	Priority       *int       `json:"priority,omitempty"`
 	IdempotencyKey *string    `json:"idempotency_key,omitempty"`
 	ScheduledAt    *time.Time `json:"scheduled_at,omitempty"`

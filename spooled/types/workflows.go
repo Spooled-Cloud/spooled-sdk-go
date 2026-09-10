@@ -59,10 +59,13 @@ const (
 )
 
 // WorkflowJobDefinition defines a job within a workflow.
+//
+// Payload is `any`: `WorkflowJobDefinition.payload` on the API is
+// `serde_json::Value`, so an array or scalar is a valid job payload.
 type WorkflowJobDefinition struct {
 	Key            string          `json:"key"`
 	QueueName      string          `json:"queue_name"`
-	Payload        JsonObject      `json:"payload"`
+	Payload        any             `json:"payload"`
 	DependsOn      []string        `json:"depends_on,omitempty"`
 	DependencyMode *DependencyMode `json:"dependency_mode,omitempty"`
 	Priority       *int            `json:"priority,omitempty"`
