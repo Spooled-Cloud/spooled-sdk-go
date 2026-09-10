@@ -43,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Job.Payload` / `Job.Result` / `Job.Tags` and claim/complete now accept any
+  JSON. They were `map[string]any`, so `GET /jobs/{id}` and claim failed to
+  unmarshal a string, array, or boolean (`serde_json::Value`).
 - `Auth().VerifyEmail` now maps the tagged `{type: login|signup}` body,
   including `signup_token` for new emails. It previously unmarshalled only
   token fields, so a signup response left `AccessToken` empty and dropped

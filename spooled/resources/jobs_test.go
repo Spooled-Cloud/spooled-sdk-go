@@ -67,6 +67,42 @@ func TestJob_UnmarshalRetryCountFromDetailJSON(t *testing.T) {
 	}
 }
 
+func TestJob_UnmarshalNonObjectPayloadAndResult(t *testing.T) {
+	body := `{
+		"id":"job_1","organization_id":"org_1","queue_name":"emails","status":"completed",
+		"payload":["a","b"],"result":"ok","retry_count":0,"max_retries":3,"priority":0,
+		"timeout_seconds":300,"tags":["urgent"],
+		"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"
+	}`
+	var job Job
+	if err := json.Unmarshal([]byte(body), &job); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	payload, ok := job.Payload.([]any)
+	if !ok || len(payload) != 2 {
+		t.Errorf("Payload = %#v, want [a b]", job.Payload)
+	}
+	if job.Result != "ok" {
+		t.Errorf("Result = %#v, want ok", job.Result)
+	}
+	tags, ok := job.Tags.([]any)
+	if !ok || len(tags) != 1 {
+		t.Errorf("Tags = %#v, want [urgent]", job.Tags)
+	}
+}
+
+func TestClaimedJob_UnmarshalNonObjectPayload(t *testing.T) {
+	body := `{"id":"job_1","queue_name":"emails","payload":["item"],"retry_count":0,"max_retries":3,"timeout_seconds":30}`
+	var job ClaimedJob
+	if err := json.Unmarshal([]byte(body), &job); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	payload, ok := job.Payload.([]any)
+	if !ok || len(payload) != 1 {
+		t.Errorf("Payload = %#v, want [item]", job.Payload)
+	}
+}
+
 func TestBatchJobStatus_UnmarshalRetryCountFromStatusJSON(t *testing.T) {
 	body := `{
 		"id":"job_1","status":"failed","queue_name":"emails",

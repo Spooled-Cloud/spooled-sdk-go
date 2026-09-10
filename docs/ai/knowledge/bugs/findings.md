@@ -23,5 +23,6 @@
 | GS-19 | P1 | ~~`Ingest().CustomWithToken` treated empty 200 as error; `Custom` unmarshalled `{job_id,created}` the API never sends~~ **FIXED** | `spooled/resources/ingest.go`; handler returns `StatusCode::OK` |
 | GS-20 | P1 | ~~`Ingest().Custom` returned `error` only and dropped `job_id` after backend started sending `WebhookResponse`~~ **FIXED** | `spooled/resources/ingest.go`; maps `job_id`/`queue_name`/`status` |
 | GS-21 | P1 | ~~`Auth().VerifyEmail` dropped `signup_token` (typed login tokens only)~~ **FIXED** | `spooled/resources/auth.go`; POST `/auth/email/verify` is tagged login\|signup |
+| GS-22 | P1 | ~~`Job.Payload`/`Result` as `map[string]any` failed to unmarshal non-object JSON~~ **FIXED** | `spooled/resources/jobs.go`; backend payload/result is `serde_json::Value` |
 
 Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if caller wanted “omit means settings default ≠3”.

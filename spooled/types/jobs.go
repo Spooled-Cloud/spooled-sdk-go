@@ -40,10 +40,10 @@ type CreateJobResponse struct {
 type Job struct {
 	ID                string      `json:"id"`
 	OrganizationID    string      `json:"organization_id"`
-	QueueName         string      `json:"queue_name"`
-	Status            JobStatus   `json:"status"`
-	Payload           JsonObject  `json:"payload"`
-	Result            *JsonObject `json:"result,omitempty"`
+	QueueName         string    `json:"queue_name"`
+	Status            JobStatus `json:"status"`
+	Payload           any       `json:"payload"`
+	Result            any       `json:"result,omitempty"`
 	RetryCount        int         `json:"retry_count"`
 	MaxRetries        int         `json:"max_retries"`
 	LastError         *string     `json:"last_error,omitempty"`
@@ -52,9 +52,9 @@ type Job struct {
 	StartedAt         *time.Time  `json:"started_at,omitempty"`
 	CompletedAt       *time.Time  `json:"completed_at,omitempty"`
 	ExpiresAt         *time.Time  `json:"expires_at,omitempty"`
-	Priority          int         `json:"priority"`
-	Tags              *JsonObject `json:"tags,omitempty"`
-	TimeoutSeconds    int         `json:"timeout_seconds"`
+	Priority          int `json:"priority"`
+	Tags              any `json:"tags,omitempty"`
+	TimeoutSeconds    int `json:"timeout_seconds"`
 	ParentJobID       *string     `json:"parent_job_id,omitempty"`
 	CompletionWebhook *string     `json:"completion_webhook,omitempty"`
 	AssignedWorkerID  *string     `json:"assigned_worker_id,omitempty"`
@@ -154,8 +154,8 @@ type ClaimedJob struct {
 
 // CompleteJobRequest is the request to complete a job.
 type CompleteJobRequest struct {
-	WorkerID string      `json:"worker_id"`
-	Result   *JsonObject `json:"result,omitempty"`
+	WorkerID string `json:"worker_id"`
+	Result   any    `json:"result,omitempty"`
 }
 
 // CompleteJobResponse is the response from completing a job.

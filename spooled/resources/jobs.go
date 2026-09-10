@@ -48,10 +48,11 @@ const (
 type Job struct {
 	ID             string         `json:"id"`
 	OrganizationID string         `json:"organization_id"`
-	QueueName      string         `json:"queue_name"`
-	Status         JobStatus      `json:"status"`
-	Payload        map[string]any `json:"payload"`
-	Result         map[string]any `json:"result,omitempty"`
+	QueueName      string    `json:"queue_name"`
+	Status         JobStatus `json:"status"`
+	// Payload/Result/Tags are JSON values (object, array, string, bool, …).
+	Payload any `json:"payload"`
+	Result  any `json:"result,omitempty"`
 	// JobType is payload.job_type on list summaries; GET /jobs/{id} has no
 	// column and UnmarshalJSON copies it from payload when present.
 	JobType           string         `json:"job_type,omitempty"`
@@ -63,9 +64,9 @@ type Job struct {
 	StartedAt         *time.Time     `json:"started_at,omitempty"`
 	CompletedAt       *time.Time     `json:"completed_at,omitempty"`
 	ExpiresAt         *time.Time     `json:"expires_at,omitempty"`
-	Priority          int            `json:"priority"`
-	Tags              map[string]any `json:"tags,omitempty"`
-	TimeoutSeconds    int            `json:"timeout_seconds"`
+	Priority          int `json:"priority"`
+	Tags              any `json:"tags,omitempty"`
+	TimeoutSeconds    int `json:"timeout_seconds"`
 	ParentJobID       *string        `json:"parent_job_id,omitempty"`
 	CompletionWebhook *string        `json:"completion_webhook,omitempty"`
 	AssignedWorkerID  *string        `json:"assigned_worker_id,omitempty"`
@@ -92,9 +93,11 @@ func (j *Job) UnmarshalJSON(data []byte) error {
 	if aux.Attempt != nil && j.RetryCount == 0 {
 		j.RetryCount = *aux.Attempt
 	}
-	if j.JobType == "" && j.Payload != nil {
-		if t, ok := j.Payload["job_type"].(string); ok {
-			j.JobType = t
+	if j.JobType == "" {
+		if payload, ok := j.Payload.(map[string]any); ok {
+			if t, ok := payload["job_type"].(string); ok {
+				j.JobType = t
+			}
 		}
 	}
 	return nil
@@ -325,10 +328,10 @@ type ClaimJobsRequest struct {
 
 // ClaimedJob is a job that has been claimed by a worker.
 type ClaimedJob struct {
-	ID             string         `json:"id"`
-	QueueName      string         `json:"queue_name"`
-	Payload        map[string]any `json:"payload"`
-	RetryCount     int            `json:"retry_count"`
+	ID             string `json:"id"`
+	QueueName      string `json:"queue_name"`
+	Payload        any    `json:"payload"`
+	RetryCount     int    `json:"retry_count"`
 	MaxRetries     int            `json:"max_retries"`
 	TimeoutSeconds int            `json:"timeout_seconds"`
 	LeaseExpiresAt *time.Time     `json:"lease_expires_at,omitempty"`
@@ -354,8 +357,8 @@ func (r *JobsResource) Claim(ctx context.Context, req *ClaimJobsRequest) (*Claim
 
 // CompleteJobRequest is the request to complete a job.
 type CompleteJobRequest struct {
-	WorkerID string         `json:"worker_id"`
-	Result   map[string]any `json:"result,omitempty"`
+	WorkerID string `json:"worker_id"`
+	Result   any    `json:"result,omitempty"`
 	// LeaseID is the lease fencing token from the claimed job. When set, the
 	// completion succeeds only if it matches the job's current lease.
 	LeaseID *string `json:"lease_id,omitempty"`

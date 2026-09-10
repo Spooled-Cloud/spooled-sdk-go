@@ -21,6 +21,7 @@
 - `GET /admin/plans` is a flat `PlanLimits` array (`tier`, `display_name`, limit fields on the same object), not `{ limits, price, description }`.
 - Slug check is `GET /organizations/check-slug?slug=`, not `/organizations/check-slug/{slug}`. Body is `available`, `valid`, `error`, `suggestion`.
 - Job list/DLQ summaries send `attempt` and `max_retries`, not `retry_count`. `Jobs().List` maps `attempt` onto `Job.RetryCount`. Detail `GET /jobs/{id}` still uses `retry_count`.
+- Job `payload` / `result` / `tags` is `serde_json::Value`, not only objects. `map[string]any` failed to unmarshal string/array/bool JSON.
 - `GET /jobs` summaries include `job_type` from `payload.job_type`. `Job.JobType` maps that field; GET detail copies it from `payload` when the top-level field is absent.
 - `GET /jobs/status` returns `{ id, status, queue_name, retry_count, created_at, completed_at }` (no `attempt`/`max_retries`). `BatchStatus` maps `retry_count` onto `RetryCount`.
 - `POST /schedules` returns `{ id, name, cron_expression, next_run_at }`, not a full `Schedule`. `Schedules().Create` backfills queue/timezone/payload from the request and sets `IsActive` true (the insert is always active).

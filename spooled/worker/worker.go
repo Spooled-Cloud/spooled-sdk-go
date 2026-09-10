@@ -396,12 +396,13 @@ func (w *Worker) processJob(job resources.ClaimedJob) {
 			Data:      JobStartedData{JobID: job.ID, QueueName: job.QueueName},
 		})
 
+		payload, _ := job.Payload.(map[string]any)
 		// Build job context
 		jctx := &JobContext{
 			Context:    jobCtx,
 			JobID:      job.ID,
 			QueueName:  job.QueueName,
-			Payload:    job.Payload,
+			Payload:    payload,
 			RetryCount: job.RetryCount,
 			MaxRetries: job.MaxRetries,
 			workerID:   aj.workerID,
