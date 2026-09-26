@@ -5,6 +5,24 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-09-26
+
+### Fixed
+
+- **`Jobs().DLQ().Purge` always failed.** The API requires `"confirm": true`
+  on `POST /jobs/dlq/purge`, and `PurgeDLQRequest` had no such field, so every
+  purge was rejected as a validation error. `Purge` now always sends it (calling
+  `Purge` is the confirmation) without mutating the caller's request, and a nil
+  request purges the whole DLQ. `PurgeDLQRequest` also gains the `OlderThan` and
+  `Limit` filters the API accepts.
+
+### Notes
+
+- `Jobs().Heartbeat` with `LeaseDurationSec` left nil was a 422 on API versions
+  before 0.1.115; from 0.1.115 the server applies the default lease (30 s).
+- The SSE client already sends `?queue=` / `?job_id=` to `/api/v1/events`; with
+  API 0.1.114+ that stream carries job events, so `OnJobEvent` handlers fire.
+
 ## [1.3.0] - 2026-09-10
 
 A contract-parity pass against the backend: every fix below is a place where

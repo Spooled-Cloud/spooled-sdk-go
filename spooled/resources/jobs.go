@@ -518,6 +518,13 @@ func (r *DLQResource) Retry(ctx context.Context, req *RetryDLQRequest) (*RetryDL
 // PurgeDLQRequest is the request to purge DLQ jobs.
 type PurgeDLQRequest struct {
 	QueueName *string `json:"queue_name,omitempty"`
+	// OlderThan purges only jobs created before this time.
+	OlderThan *time.Time `json:"older_than,omitempty"`
+	// Limit caps how many jobs one call purges (API default and max: 10000).
+	Limit *int `json:"limit,omitempty"`
+	// Confirm must be true: the API rejects a purge without it. Purge sets it,
+	// since calling Purge is the confirmation.
+	Confirm bool `json:"confirm"`
 }
 
 // PurgeDLQResponse is the response from purging DLQ jobs.
@@ -528,8 +535,15 @@ type PurgeDLQResponse struct {
 // Purge removes jobs from the dead letter queue.
 func (r *DLQResource) Purge(ctx context.Context, req *PurgeDLQRequest) (*PurgeDLQResponse, error) {
 	var result PurgeDLQResponse
+	// The API requires "confirm": true; without it every purge failed with a
+	// validation error. Copy so the caller's struct is not mutated.
+	body := PurgeDLQRequest{Confirm: true}
+	if req != nil {
+		body = *req
+		body.Confirm = true
+	}
 	// Parity with Node/Python: POST /jobs/dlq/purge
-	if err := r.base.Post(ctx, "/api/v1/jobs/dlq/purge", req, &result); err != nil {
+	if err := r.base.Post(ctx, "/api/v1/jobs/dlq/purge", &body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

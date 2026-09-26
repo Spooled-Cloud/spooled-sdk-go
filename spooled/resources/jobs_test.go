@@ -347,3 +347,50 @@ func TestRenewLease_ForwardsLeaseIDToHeartbeat(t *testing.T) {
 		t.Errorf("lease_id = %v, want %q", got, "lease-abc123")
 	}
 }
+
+// The API rejects a DLQ purge whose body lacks "confirm": true, so Purge must
+// always send it — including for a nil request — without mutating the caller's
+// struct.
+func TestDLQPurge_AlwaysSendsConfirm(t *testing.T) {
+	var gotPath string
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		data, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		if err := json.Unmarshal(data, &body); err != nil {
+			t.Errorf("invalid request body %s: %v", data, err)
+		}
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"purged_count":3}`))
+	}))
+	defer server.Close()
+
+	jobs := NewJobsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+
+	req := &PurgeDLQRequest{QueueName: strPtr("emails"), Limit: intPtr(10)}
+	res, err := jobs.DLQ().Purge(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Purge failed: %v", err)
+	}
+	if res.PurgedCount != 3 {
+		t.Errorf("PurgedCount = %d, want 3", res.PurgedCount)
+	}
+	if gotPath != "/api/v1/jobs/dlq/purge" {
+		t.Errorf("path = %s", gotPath)
+	}
+	if bodies[0]["confirm"] != true || bodies[0]["queue_name"] != "emails" || bodies[0]["limit"] != float64(10) {
+		t.Errorf("body = %v, want confirm=true, queue_name=emails, limit=10", bodies[0])
+	}
+	if req.Confirm {
+		t.Error("Purge mutated the caller's request")
+	}
+
+	if _, err := jobs.DLQ().Purge(context.Background(), nil); err != nil {
+		t.Fatalf("Purge(nil) failed: %v", err)
+	}
+	if bodies[1]["confirm"] != true {
+		t.Errorf("nil request body = %v, want confirm=true", bodies[1])
+	}
+}

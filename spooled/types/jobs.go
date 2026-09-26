@@ -255,7 +255,10 @@ type RetryDLQResponse struct {
 
 // PurgeDLQRequest is the request to purge DLQ jobs.
 type PurgeDLQRequest struct {
-	QueueName *string `json:"queue_name,omitempty"`
+	QueueName *string    `json:"queue_name,omitempty"`
+	OlderThan *time.Time `json:"older_than,omitempty"`
+	Limit     *int       `json:"limit,omitempty"`
+	Confirm   bool       `json:"confirm"`
 }
 
 // PurgeDLQResponse is the response from purging DLQ jobs.
