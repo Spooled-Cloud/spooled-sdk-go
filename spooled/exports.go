@@ -114,7 +114,9 @@ func ListJobs(client *Client, params *resources.ListJobsParams) ([]resources.Job
 // Example:
 //
 //	worker, err := spooled.CreateWorker(client, "emails", func(ctx context.Context, job *resources.Job) (any, error) {
-//		fmt.Printf("Processing email to: %v\n", job.Payload["to"])
+//		// job.Payload is any: assert the shape you expect.
+//		payload, _ := job.Payload.(map[string]any)
+//		fmt.Printf("Processing email to: %v\n", payload["to"])
 //		return map[string]any{"sent": true}, nil
 //	})
 //	if err != nil {

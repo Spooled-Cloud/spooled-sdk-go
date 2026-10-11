@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
@@ -211,32 +210,41 @@ type OutgoingWebhookDelivery struct {
 }
 
 // ListDeliveriesParams are parameters for listing webhook deliveries.
+//
+// GET /outgoing-webhooks/{id}/deliveries takes no query parameters: it always
+// returns the newest 100 deliveries. Status, Offset and Limit are applied
+// client-side to that list (they used to be sent and ignored).
 type ListDeliveriesParams struct {
 	Status *WebhookDeliveryStatus `json:"status,omitempty"`
 	Limit  *int                   `json:"limit,omitempty"`
 	Offset *int                   `json:"offset,omitempty"`
 }
 
-// Deliveries retrieves delivery attempts for a webhook.
+// Deliveries retrieves delivery attempts for a webhook, newest first.
 //
 // This is not a durable audit log. Only the newest 100 deliveries per webhook
 // are readable, and rows are removed by the per-organization retention sweep
 // once they pass the plan's history retention window: 1 day on free, 7 on
 // starter, 30 on pro, 90 on enterprise. Copy anything you need to keep longer.
 func (r *WebhooksResource) Deliveries(ctx context.Context, id string, params *ListDeliveriesParams) ([]OutgoingWebhookDelivery, error) {
-	query := url.Values{}
-	if params != nil {
-		if params.Status != nil {
-			query.Set("status", string(*params.Status))
-		}
-		AddPaginationParams(query, params.Limit, params.Offset)
-	}
-
 	var result []OutgoingWebhookDelivery
-	if err := r.base.GetWithQuery(ctx, fmt.Sprintf("/api/v1/outgoing-webhooks/%s/deliveries", id), query, &result); err != nil {
+	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/outgoing-webhooks/%s/deliveries", id), &result); err != nil {
 		return nil, err
 	}
-	return result, nil
+	if params == nil {
+		return result, nil
+	}
+
+	if params.Status != nil {
+		filtered := make([]OutgoingWebhookDelivery, 0, len(result))
+		for _, d := range result {
+			if d.Status == *params.Status {
+				filtered = append(filtered, d)
+			}
+		}
+		result = filtered
+	}
+	return paginate(result, params.Offset, params.Limit), nil
 }
 
 // RetryDeliveryResponse is the response from retrying a webhook delivery.

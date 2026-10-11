@@ -2,8 +2,7 @@ package resources
 
 import (
 	"context"
-	"encoding/json"
-	"io"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -66,32 +65,29 @@ func TestRegenerateWebhookToken_UsesAuthScopedRoute(t *testing.T) {
 	}
 }
 
-func TestClearWebhookToken_PostsConfirmToClearRoute(t *testing.T) {
-	var gotMethod, gotPath string
-	var gotBody map[string]any
+// TestClearWebhookToken_IsUnsupportedWithoutNetworkCall pins SDKGP/FEAT 2a: the
+// API answers POST /organizations/webhook-token/clear with 422 every time (an
+// unauthenticated ingestion endpoint is never allowed), so the method fails fast
+// with a typed error that says so instead of a request that cannot succeed.
+func TestClearWebhookToken_IsUnsupportedWithoutNetworkCall(t *testing.T) {
+	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod = r.Method
-		gotPath = r.URL.Path
-		data, _ := io.ReadAll(r.Body)
-		if err := json.Unmarshal(data, &gotBody); err != nil {
-			t.Errorf("invalid body %s: %v", data, err)
-		}
-		w.WriteHeader(http.StatusNoContent)
+		called = true
+		w.WriteHeader(http.StatusUnprocessableEntity)
 	}))
 	defer server.Close()
 
 	res := NewOrganizationsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
-	if err := res.ClearWebhookToken(context.Background(), "org_1"); err != nil {
-		t.Fatalf("ClearWebhookToken: %v", err)
+	err := res.ClearWebhookToken(context.Background(), "org_1")
+	if !errors.Is(err, ErrUnsupported) || !IsUnsupportedError(err) {
+		t.Fatalf("ClearWebhookToken err = %v, want ErrUnsupported", err)
 	}
-	if gotMethod != http.MethodPost {
-		t.Errorf("method = %q, want POST", gotMethod)
+	var unsupported *UnsupportedError
+	if !errors.As(err, &unsupported) || unsupported.Operation != "Organizations.ClearWebhookToken" {
+		t.Errorf("err = %#v, want an UnsupportedError for Organizations.ClearWebhookToken", err)
 	}
-	if gotPath != "/api/v1/organizations/webhook-token/clear" {
-		t.Errorf("path = %q, want /api/v1/organizations/webhook-token/clear", gotPath)
-	}
-	if gotBody["confirm"] != true {
-		t.Errorf("body = %v, want confirm:true", gotBody)
+	if called {
+		t.Error("ClearWebhookToken made a network request")
 	}
 }
 

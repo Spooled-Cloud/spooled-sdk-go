@@ -4,7 +4,9 @@ package grpc
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/grpc/pb"
+	"github.com/spooled-cloud/spooled-sdk-go/spooled/resources"
 )
 
 // Client is the gRPC client for Spooled.
@@ -32,7 +35,10 @@ type ClientOptions struct {
 	Address string
 	// APIKey is the API key for authentication
 	APIKey string
-	// UseTLS enables TLS (default: true for port 443)
+	// UseTLS forces TLS on or off. When nil, TLS is used for port 443 (and for an
+	// address with no port, which gRPC dials on 443) and plaintext is used for
+	// every other port, including localhost:50051. Set it to dial a TLS
+	// endpoint on another port, such as ":8443".
 	UseTLS *bool
 	// TLSConfig is custom TLS configuration (optional)
 	TLSConfig *tls.Config
@@ -55,12 +61,9 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	}
 
 	// Determine TLS setting
-	useTLS := true
+	useTLS := defaultUseTLS(opts.Address)
 	if opts.UseTLS != nil {
 		useTLS = *opts.UseTLS
-	} else if !strings.HasSuffix(opts.Address, ":443") && !strings.Contains(opts.Address, "localhost") {
-		// Default to TLS for :443, no TLS for localhost
-		useTLS = strings.HasSuffix(opts.Address, ":443")
 	}
 
 	dialOpts := []grpc.DialOption{}
@@ -100,6 +103,27 @@ func NewClient(opts ClientOptions) (*Client, error) {
 		// an inscrutable failure from a stray newline in their API key.
 		apiKey: strings.TrimSpace(opts.APIKey),
 	}, nil
+}
+
+// defaultUseTLS decides whether to use TLS when the caller did not say. Only the
+// standard TLS port, or no port at all (gRPC then dials 443), gets TLS; a
+// development server on any other port, "localhost:50051" included, is plaintext.
+//
+// The earlier check meant to skip TLS for localhost but had the condition
+// inverted, so "localhost:50051" was dialed with TLS and failed its first RPC
+// with "first record does not look like a TLS handshake".
+func defaultUseTLS(address string) bool {
+	target := address
+	// Strip a resolver scheme such as "dns:///host:443".
+	if i := strings.LastIndex(target, "/"); i >= 0 {
+		target = target[i+1:]
+	}
+	_, port, err := net.SplitHostPort(target)
+	if err != nil {
+		// No port (or an unparsable one): gRPC dials 443.
+		return true
+	}
+	return port == "443"
 }
 
 // Close closes the gRPC connection.
@@ -166,13 +190,14 @@ func (c *Client) Enqueue(ctx context.Context, req *EnqueueRequest) (*EnqueueResp
 		pbReq.TimeoutSeconds = *req.TimeoutSeconds
 	}
 
-	// Convert payload to protobuf Struct
-	if req.Payload != nil {
-		s, err := structpb.NewStruct(req.Payload)
-		if err == nil {
-			pbReq.Payload = s
-		}
+	// Convert payload to protobuf Struct. An error here must reach the caller: the
+	// server treats a missing payload as {}, so swallowing it created the job with
+	// an empty payload and reported success.
+	payload, err := toStruct(req.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("invalid payload: %w", err)
 	}
+	pbReq.Payload = payload
 
 	// Convert scheduled time
 	if req.ScheduledAt != nil {
@@ -264,14 +289,13 @@ func (c *Client) Complete(ctx context.Context, req *CompleteRequest) error {
 		LeaseId:  req.LeaseID,
 	}
 
-	if req.Result != nil {
-		s, err := structpb.NewStruct(req.Result)
-		if err == nil {
-			pbReq.Result = s
-		}
+	result, err := toStruct(req.Result)
+	if err != nil {
+		return fmt.Errorf("invalid result: %w", err)
 	}
+	pbReq.Result = result
 
-	_, err := c.queueClient.Complete(ctx, pbReq)
+	_, err = c.queueClient.Complete(ctx, pbReq)
 	return err
 }
 
@@ -280,22 +304,33 @@ type FailRequest struct {
 	JobID    string
 	WorkerID string
 	Error    string
-	Retry    bool
+	// Retry has no effect any more: a failed job is retried, up to the job's
+	// max_retries, unless NoRetry is set.
+	//
+	// Deprecated: the zero value used to mean "dead-letter now" because proto3
+	// cannot tell an omitted bool from false, so a Fail without Retry skipped
+	// every retry. Retrying is now the default; set NoRetry to opt out.
+	Retry bool
+	// NoRetry dead-letters the job immediately instead of scheduling a retry.
+	NoRetry bool
 	// LeaseID is the lease fencing token from the dequeued Job. When set, the
 	// failure succeeds only if it matches the job's current lease.
 	LeaseID string
 }
 
-// Fail marks a job as failed.
+// Fail marks a job as failed. Unless req.NoRetry is set the job is retried with
+// backoff until max_retries is used up, like a failure reported over REST.
 func (c *Client) Fail(ctx context.Context, req *FailRequest) error {
 	ctx = c.withAuth(ctx)
 
 	pbReq := &pb.FailRequest{
 		JobId:    req.JobID,
 		WorkerId: req.WorkerID,
-		Error:    req.Error,
-		Retry:    req.Retry,
-		LeaseId:  req.LeaseID,
+		// The server rejects (REST) or has to trim (gRPC) an empty or over-long
+		// message; send one it accepts.
+		Error:   resources.CoerceFailureMessage(req.Error),
+		Retry:   !req.NoRetry,
+		LeaseId: req.LeaseID,
 	}
 
 	_, err := c.queueClient.Fail(ctx, pbReq)
@@ -480,6 +515,29 @@ func (c *Client) DeregisterWorker(ctx context.Context, workerID string) error {
 }
 
 // Helper functions
+
+// toStruct converts a Go map to a protobuf Struct through JSON.
+//
+// structpb.NewStruct accepts only the exact dynamic types the protobuf JSON
+// mapping uses (map[string]any, []any, string, float64, bool, nil), so a
+// []string, a map[string]string, a time.Time or a struct anywhere in the map was
+// rejected. Encoding to JSON first accepts everything encoding/json can encode.
+// protobuf Struct numbers are doubles, so integers above 2^53 lose precision
+// over gRPC; use REST for those.
+func toStruct(m map[string]any) (*structpb.Struct, error) {
+	if m == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	s := &structpb.Struct{}
+	if err := s.UnmarshalJSON(data); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
 
 func pbJobToJob(j *pb.Job) *Job {
 	if j == nil {

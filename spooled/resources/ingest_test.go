@@ -23,8 +23,9 @@ func TestCustom_MapsWebhookResponse(t *testing.T) {
 
 	res := NewIngestResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
 	req := &CustomWebhookRequest{
-		QueueName: "events",
-		Payload:   map[string]any{"ok": true},
+		QueueName:    "events",
+		Payload:      map[string]any{"ok": true},
+		WebhookToken: "whk_custom",
 	}
 
 	got, err := res.Custom(context.Background(), "org_1", req)
@@ -33,6 +34,9 @@ func TestCustom_MapsWebhookResponse(t *testing.T) {
 	}
 	if gotPath != "/api/v1/webhooks/org_1/custom" {
 		t.Errorf("path = %q, want /api/v1/webhooks/org_1/custom", gotPath)
+	}
+	if gotToken != "whk_custom" {
+		t.Errorf("Custom X-Webhook-Token = %q, want whk_custom", gotToken)
 	}
 	if got == nil || got.JobID != "job_1" || got.QueueName != "events" || got.Status != "pending" {
 		t.Errorf("Custom = %+v, want job_1/events/pending", got)
@@ -58,7 +62,7 @@ func TestCustom_AcceptsEmpty200(t *testing.T) {
 	defer server.Close()
 
 	res := NewIngestResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
-	req := &CustomWebhookRequest{QueueName: "events", Payload: map[string]any{"ok": true}}
+	req := &CustomWebhookRequest{QueueName: "events", Payload: map[string]any{"ok": true}, WebhookToken: "whk_test"}
 
 	got, err := res.Custom(context.Background(), "org_1", req)
 	if err != nil {

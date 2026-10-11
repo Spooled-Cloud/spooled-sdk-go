@@ -257,11 +257,15 @@ func (r *OrganizationsResource) RegenerateWebhookToken(ctx context.Context, id s
 	return &result, nil
 }
 
-// ClearWebhookToken asks the backend to clear the webhook token.
-// The backend rejects this (use regenerate to rotate). id is unused; the
-// route is POST /organizations/webhook-token/clear with confirm: true, not
-// DELETE /organizations/{id}/webhook-token.
-func (r *OrganizationsResource) ClearWebhookToken(ctx context.Context, id string) error {
-	_ = id
-	return r.base.Post(ctx, "/api/v1/organizations/webhook-token/clear", map[string]bool{"confirm": true}, nil)
+// ClearWebhookToken always returns an UnsupportedError and makes no request.
+//
+// Deprecated: the API refuses to clear the webhook token (POST
+// /organizations/webhook-token/clear answers 422 every time) because an
+// unauthenticated ingestion endpoint is unsafe in a multi-tenant service. Use
+// RegenerateWebhookToken to rotate it. id is unused.
+func (r *OrganizationsResource) ClearWebhookToken(_ context.Context, _ string) error {
+	return &UnsupportedError{
+		Operation: "Organizations.ClearWebhookToken",
+		Reason:    "the API does not allow clearing the webhook token; rotate it with RegenerateWebhookToken",
+	}
 }

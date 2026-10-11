@@ -43,7 +43,10 @@ type Options struct {
 	LeaseDuration int
 	// HeartbeatFraction is the heartbeat interval as a fraction of lease duration (default: 0.5)
 	HeartbeatFraction float64
-	// ShutdownTimeout is the graceful shutdown timeout (default: 30s)
+	// ShutdownTimeout is how long Stop (and cancelling the context given to
+	// Start) lets running handlers finish before they are cancelled and their
+	// jobs failed with "Worker shutdown timeout" (default: 30s). Handlers that
+	// finish inside the window are completed or failed normally.
 	ShutdownTimeout time.Duration
 	// Version is the worker version string
 	Version string
@@ -76,13 +79,26 @@ type JobContext struct {
 	JobID string
 	// QueueName is the queue this job belongs to
 	QueueName string
-	// Payload is the job payload data
+	// Payload is the job payload when it is a JSON object, and nil for any other
+	// JSON value (array, string, number, boolean, null). Use RawPayload to read
+	// those.
 	Payload map[string]any
+	// RawPayload is the decoded job payload whatever its JSON type: a
+	// map[string]any for an object, a []any for an array, a string, a float64, a
+	// bool, or nil. Integers too large for a float64 (above 2^53) arrive as
+	// json.Number so IDs are not rounded; every other number is a float64.
+	RawPayload any
 	// RetryCount is the current retry attempt number
 	RetryCount int
 	// MaxRetries is the maximum number of retries
 	MaxRetries int
-	// Progress reports job progress (0-100)
+	// Progress is not supported: the Spooled API has no job progress route. It
+	// returns an *resources.UnsupportedError (it matches resources.ErrUnsupported
+	// with errors.Is) and makes no request. Returning that error from a handler
+	// fails the job, so remove the call. Return progress in the job result or
+	// report it with Log.
+	//
+	// Deprecated: the API cannot store job progress.
 	Progress func(percent float64, message string) error
 	// Log logs a message at the specified level
 	Log func(level string, message string, meta map[string]any)
@@ -100,13 +116,20 @@ type JobHandler func(ctx *JobContext) (map[string]any, error)
 type EventType string
 
 const (
-	EventWorkerStarted   EventType = "worker:started"
-	EventWorkerStopped   EventType = "worker:stopped"
-	EventWorkerError     EventType = "worker:error"
-	EventJobClaimed      EventType = "job:claimed"
-	EventJobStarted      EventType = "job:started"
-	EventJobCompleted    EventType = "job:completed"
-	EventJobFailed       EventType = "job:failed"
+	EventWorkerStarted EventType = "worker:started"
+	EventWorkerStopped EventType = "worker:stopped"
+	EventWorkerError   EventType = "worker:error"
+	EventJobClaimed    EventType = "job:claimed"
+	EventJobStarted    EventType = "job:started"
+	EventJobCompleted  EventType = "job:completed"
+	EventJobFailed     EventType = "job:failed"
+	// EventJobTimeout is emitted when a job runs longer than its timeout_seconds.
+	// The handler's context is canceled and the job is failed with "Job timeout
+	// exceeded"; EventJobFailed follows once the API accepts the failure.
+	EventJobTimeout EventType = "job:timeout"
+	// EventJobProgress is never emitted: the API has no job progress route.
+	//
+	// Deprecated: job progress is not supported.
 	EventJobProgress     EventType = "job:progress"
 	EventJobHeartbeat    EventType = "job:heartbeat"
 	EventJobLeaseLost    EventType = "job:lease_lost"
@@ -157,6 +180,14 @@ type JobCompletedData struct {
 	Duration  time.Duration
 }
 
+// JobTimeoutData is emitted when a job exceeds its timeout_seconds.
+type JobTimeoutData struct {
+	JobID          string
+	QueueName      string
+	TimeoutSeconds int
+	Duration       time.Duration
+}
+
 // JobFailedData is emitted when a job fails.
 type JobFailedData struct {
 	JobID     string
@@ -176,7 +207,9 @@ type JobLeaseLostData struct {
 	Error     error
 }
 
-// JobProgressData is emitted when job progress is updated.
+// JobProgressData describes a job progress update.
+//
+// Deprecated: job progress is not supported by the API, so it is never emitted.
 type JobProgressData struct {
 	JobID   string
 	Percent float64

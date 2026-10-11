@@ -74,10 +74,11 @@ func main() {
 
 	// Create worker
 	w := worker.NewWorker(client.Jobs(), client.Workers(), worker.Options{
-		QueueName:   queueName,
-		WorkerID:    workerID,
-		Concurrency: 3,
-		Debug:       true,
+		QueueName:       queueName,
+		WorkerID:        workerID,
+		Concurrency:     3,
+		ShutdownTimeout: 30 * time.Second,
+		Debug:           true,
 	})
 
 	// Register job handler
@@ -89,11 +90,10 @@ func main() {
 		message := ctx.Payload["message"]
 		fmt.Printf("    Task ID: %v, Message: %v\n", taskID, message)
 
-		// Report progress
-		ctx.Progress(50, "Processing...")
+		// The API has no job progress route (ctx.Progress is unsupported), so log
+		// progress locally and return anything the caller needs in the result.
+		ctx.Log("info", "processing", map[string]any{"percent": 50})
 		time.Sleep(500 * time.Millisecond)
-
-		ctx.Progress(100, "Complete")
 
 		return map[string]any{
 			"processed": true,
@@ -139,6 +139,9 @@ func main() {
 	<-sigCh
 	fmt.Println("\nShutting down...")
 
+	// Stop claiming, let running handlers finish (up to ShutdownTimeout, default
+	// 30s), send their results, then deregister. Cancelling the context given to
+	// Start starts the same drain; Stop waits for it to finish.
 	cancel()
 	w.Stop()
 

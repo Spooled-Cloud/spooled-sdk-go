@@ -5,6 +5,137 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-10
+
+A reliability pass on the worker, the transport, gRPC and the realtime clients,
+from a deep bug hunt against the backend contract. Read **Behaviour changes**
+before upgrading a worker: shutdown now waits for running handlers.
+
+### Behaviour changes
+
+- **`Stop` drains instead of cancelling.** `Worker.Stop()` and cancelling the
+  context passed to `Start` used to cancel every in-flight job context first, so
+  context-aware handlers returned `context canceled` and the job was reported
+  failed (a job on its last retry went straight to the dead-letter queue during a
+  routine deploy). Now they stop claiming, let running handlers finish for up to
+  `ShutdownTimeout` with their contexts live, send `complete` / `fail` for every
+  handler that returns in that window, and deregister last. Only handlers still
+  running at the timeout are cancelled, and their jobs are failed with
+  `Worker shutdown timeout`. Cancelling `Start`'s context begins the same drain by
+  itself; `Stop` blocks until it is done. `SpooledWorkerOptions` gains
+  `ShutdownTimeout`.
+- **Handler panics fail the job instead of crashing the process.** The panic is
+  recovered, the job is failed with `panic: <value>`, and the worker keeps
+  running (SDKGP-02).
+- **Job timeouts.** A claimed job with `timeout_seconds > 0` is cancelled and
+  failed with `Job timeout exceeded` when its handler runs longer
+  (`EventJobTimeout`, `JobTimeoutData`); its lease is no longer renewed and the
+  concurrency slot is released.
+- **Acknowledgements are retried.** `complete`, `fail`, job heartbeats and worker
+  heartbeats retry on network errors, timeouts, `408`, `429` and `5xx` with the
+  client's retry settings, and they are sent even while the circuit breaker is
+  open. A repeat that meets the server's `409 Job is already ...` after a lost
+  response counts as delivered. `408` is now retryable for every request.
+- **A plan quota is not transient.** A `429 QUOTA_EXCEEDED` (or a `429` without
+  `Retry-After` carrying a plan-limit body) is never retried and no longer
+  counts against the circuit breaker, so a full plan cannot block acks.
+  `RateLimitError` gains `Quota *QuotaInfo` and `IsQuotaExceeded()`; it still
+  matches `IsRateLimitError`. `spooled.IsQuotaExceeded` is new.
+- **Failure text is always accepted.** `Jobs().Fail` / `FailWithResponse` and the
+  gRPC `Fail` send `Job failed` for an empty message and truncate anything over
+  2048 characters on a character boundary; the API rejected both with 400, which
+  left the job `processing` until its lease expired. `resources.CoerceFailureMessage`
+  is exported.
+- **Realtime clients reconnect by default.** A `ConnectionOptions` built without
+  `AutoReconnect: true` used to stay disconnected for good after the first drop,
+  and the server ends every stream after 30 minutes. Reconnecting is now on unless
+  `DisableAutoReconnect: true`; `AutoReconnect` is deprecated and ignored. The
+  reconnect counter now resets only after a connection stayed up for 10 s, so
+  `MaxReconnectAttempts` can trip.
+- **gRPC `Fail` retries by default.** proto3 turned an omitted `Retry` into
+  `false`, which dead-letters on the first failure. `FailRequest.NoRetry` is the
+  new opt-out; `Retry` is deprecated and ignored.
+- **gRPC TLS default.** TLS is used for port 443 (or no port) and plaintext for
+  every other port. `localhost:50051` was dialed with TLS because of an inverted
+  guard. Use `grpc.ClientOptions.UseTLS`, or `spooled.WithGRPCTLS` /
+  `WithGRPCOptions` (`GRPCOptions{UseTLS, TLSConfig, DialOptions, Timeout}`,
+  also `Config.GRPC`) with `Client.GRPC()`, for a TLS endpoint on another port.
+- **Large integers survive.** Job payload/result/tag numbers decode as `float64`
+  exactly as before, except an integer above 2^53 (a Discord ID, a bigint key),
+  which is now a `json.Number` instead of a silently rounded `float64`. Code that
+  type-asserts such a value as `float64` must accept `json.Number` (`n.Int64()`).
+
+### Fixed
+
+- `Queues().GetStats` failed for any queue that had completed jobs:
+  `avg_processing_time_ms` is fractional and was typed `*int`. It, and the
+  dashboard `avg_wait_time_ms` / `avg_processing_time_ms` in `spooled/types`, are
+  now `*float64` (SDKGP-01).
+- gRPC `Enqueue` / `Complete` created the job with `{}` (and lost results) when a
+  payload held a `[]string`, `map[string]string`, `time.Time` or struct, and
+  reported success. Values are JSON-encoded first, and a value that cannot be
+  encoded is returned as an error (SDKGP-04).
+- `JobEvent.Status` is filled from `new_status` on `job.status_changed`
+  (`OldStatus`, `NewStatus`, `DurationMs`, `Timestamp` added); a non-object
+  `result` no longer drops the whole event (`RawResult` has it, `Result` stays the
+  object view) (SDKGP-08).
+- SSE read the stream with a 64 KiB line limit and WebSocket with a 32 KiB message
+  limit, so one large `job.completed` result tore the connection down. Both now
+  read up to `MaxMessageBytes` (default 4 MiB) (SDKGP-07).
+- The SSE client sends the API key as `Authorization: Bearer`, not in `?api_key=`
+  where it reached proxy and CDN logs (SDKGP-18).
+- `SpooledWorker.Start` after a failed registration returned `nil` and nothing
+  polled; it now returns the error and can be called again. The low-level
+  `Worker.Start` is retryable too (SDKGP-09).
+- The worker passes non-object payloads to handlers: `JobContext.RawPayload`
+  holds any JSON value, and `SpooledWorker` hands it to `Job.Payload` (SDKGP-11).
+- `Schedules().List` and `Webhooks().Deliveries` sent `queue_name`, `is_active`,
+  `status` and `offset`, which the API ignores, so an offset loop re-read the
+  first page forever. They send only what the API honors and apply the filters
+  and `Offset` / `Limit` locally (SDKGP-14).
+- `RetryPolicy` used one `*rand.Rand` from many goroutines, a data race under
+  `-race` in the default configuration (SDKGP-15).
+- A cancelled non-idempotent request (a claim poll cancelled at shutdown) no
+  longer counts as a circuit-breaker failure.
+- `Client.Close` closes the lazily dialed gRPC connection.
+- The worker no longer panics on `LeaseDuration * HeartbeatFraction` under one
+  second (a zero-length ticker), caps its claim `limit` at the API maximum of 100
+  and falls back to `unknown` for an empty hostname.
+- SSE: an `event:` line without data no longer leaks its type onto the next event.
+- `Health().Liveness()` / `Readiness()` return a `Status` (`alive` / `ready`) for
+  the empty 200 the API sends.
+
+### Deprecated
+
+These methods call routes the API does not have. They now fail immediately,
+without a network call, with a typed `*resources.UnsupportedError` that matches
+`errors.Is(err, spooled.ErrUnsupported)` (`spooled.IsUnsupportedError`), instead
+of a 404 that looks like an outage (SDKGP-10, SDKGP-13):
+
+- `Jobs().UpdateProgress` and `JobContext.Progress`: the API has no job progress
+  route. A handler that returned the error from `Progress` was failing every job
+  with a 404 already; return progress in the result or use `JobContext.Log`.
+- `Ingest().GitHub`, `Ingest().Stripe`: the API serves only
+  `POST /webhooks/{org_id}/custom`.
+- `Organizations().ClearWebhookToken`: the API always answers 422. Rotate with
+  `RegenerateWebhookToken`.
+- `UpdateScheduleRequest.QueueName` is ignored by the API (documented).
+
+`Ingest().Custom` always got 401 because the API requires the organization's
+webhook token. Set `CustomWebhookRequest.WebhookToken` (or call
+`CustomWithToken`); without a token `Custom` returns
+`resources.ErrWebhookTokenRequired` before any request.
+
+### Migration
+
+- A reconnecting realtime client that you turned off with `AutoReconnect: false`
+  must now set `DisableAutoReconnect: true`.
+- gRPC code that relied on `FailRequest{}` dead-lettering must set
+  `NoRetry: true`; `Retry: true` can simply be removed.
+- A gRPC server on a non-443 port that terminates TLS needs `UseTLS` / `WithGRPCTLS(true)`.
+- Do not call `Worker.Stop` from inside a handler or event callback; it waits for
+  handlers.
+
 ## [1.3.1] - 2026-09-26
 
 ### Fixed

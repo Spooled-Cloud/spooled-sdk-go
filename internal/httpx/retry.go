@@ -13,7 +13,6 @@ type RetryPolicy struct {
 	MaxDelay   time.Duration
 	Factor     float64
 	Jitter     bool
-	rng        *rand.Rand
 }
 
 // NewRetryPolicy creates a new retry policy.
@@ -37,7 +36,6 @@ func NewRetryPolicy(cfg RetryConfig) *RetryPolicy {
 		MaxDelay:   cfg.MaxDelay,
 		Factor:     cfg.Factor,
 		Jitter:     cfg.Jitter,
-		rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -53,7 +51,10 @@ func (p *RetryPolicy) Delay(attempt int) time.Duration {
 
 	// Add jitter if enabled (±25% of delay)
 	if p.Jitter {
-		jitterFactor := 0.5 + p.rng.Float64() // 0.5 to 1.5
+		// The package-level generator is safe for concurrent use. A per-policy
+		// *rand.Rand is not, and one policy is shared by every goroutine using the
+		// client (worker poll loop, job heartbeats, acks), which raced under -race.
+		jitterFactor := 0.5 + rand.Float64() // 0.5 to 1.5
 		delay = delay * jitterFactor
 	}
 

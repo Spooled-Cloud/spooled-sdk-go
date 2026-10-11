@@ -2,9 +2,9 @@ package resources
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -87,9 +87,11 @@ func (j *Job) UnmarshalJSON(data []byte) error {
 		Attempt *int `json:"attempt"`
 		*jobAlias
 	}{jobAlias: (*jobAlias)(j)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	// unmarshalJSON, not json.Unmarshal: keep large integer IDs in Payload exact.
+	if err := unmarshalJSON(data, &aux); err != nil {
 		return err
 	}
+	restoreNumbers(reflect.ValueOf(j)) // also for callers that json.Unmarshal a Job directly
 	if aux.Attempt != nil && j.RetryCount == 0 {
 		j.RetryCount = *aux.Attempt
 	}
@@ -371,9 +373,10 @@ type CompleteJobRequest struct {
 	LeaseID *string `json:"lease_id,omitempty"`
 }
 
-// Complete marks a job as completed.
+// Complete marks a job as completed. The call is retried on transient failures
+// (see Base.PostAck): it is lease-fenced, so a repeat cannot complete twice.
 func (r *JobsResource) Complete(ctx context.Context, id string, req *CompleteJobRequest) error {
-	return r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/complete", id), req, nil)
+	return r.base.PostAck(ctx, fmt.Sprintf("/api/v1/jobs/%s/complete", id), req, nil)
 }
 
 // FailJobRequest is the request to fail a job.
@@ -394,6 +397,38 @@ type FailJobResponse struct {
 	NextRetryDelaySec *int  `json:"next_retry_delay_secs,omitempty"`
 }
 
+// MaxFailureMessageLength is the longest failure message POST /jobs/{id}/fail
+// accepts, counted in characters.
+const MaxFailureMessageLength = 2048
+
+// DefaultFailureMessage replaces an empty failure message.
+const DefaultFailureMessage = "Job failed"
+
+// CoerceFailureMessage makes a failure message acceptable to the API, which
+// rejects an empty one or one over MaxFailureMessageLength characters with a 400.
+// A rejected /fail leaves the job "processing" until its lease expires, so the
+// real error is lost and the retry is delayed by the whole lease.
+//
+// An empty (or blank) message becomes "Job failed"; a longer one is cut to 2048
+// characters on a character boundary, never in the middle of a UTF-8 sequence.
+func CoerceFailureMessage(msg string) string {
+	if strings.TrimSpace(msg) == "" {
+		return DefaultFailureMessage
+	}
+	if len(msg) <= MaxFailureMessageLength {
+		// Fewer bytes than the limit means fewer characters too.
+		return msg
+	}
+	count := 0
+	for i := range msg {
+		if count == MaxFailureMessageLength {
+			return msg[:i]
+		}
+		count++
+	}
+	return msg
+}
+
 // Fail marks a job as failed.
 func (r *JobsResource) Fail(ctx context.Context, id string, req *FailJobRequest) error {
 	_, err := r.FailWithResponse(ctx, id, req)
@@ -402,9 +437,18 @@ func (r *JobsResource) Fail(ctx context.Context, id string, req *FailJobRequest)
 
 // FailWithResponse marks a job as failed and returns the backend's retry
 // disposition when available.
+//
+// The error text is passed through CoerceFailureMessage so the API cannot reject
+// it, and the call is retried on transient failures like Complete.
 func (r *JobsResource) FailWithResponse(ctx context.Context, id string, req *FailJobRequest) (*FailJobResponse, error) {
+	body := FailJobRequest{}
+	if req != nil {
+		body = *req // do not mutate the caller's request
+	}
+	body.Error = CoerceFailureMessage(body.Error)
+
 	var result FailJobResponse
-	if err := r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/fail", id), req, &result); err != nil {
+	if err := r.base.PostAck(ctx, fmt.Sprintf("/api/v1/jobs/%s/fail", id), &body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -419,9 +463,10 @@ type HeartbeatRequest struct {
 	LeaseID *string `json:"lease_id,omitempty"`
 }
 
-// Heartbeat sends a heartbeat for a job to extend its lease.
+// Heartbeat sends a heartbeat for a job to extend its lease. It is retried on
+// transient failures (see Base.PostAck).
 func (r *JobsResource) Heartbeat(ctx context.Context, id string, req *HeartbeatRequest) error {
-	return r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/heartbeat", id), req, nil)
+	return r.base.PostAck(ctx, fmt.Sprintf("/api/v1/jobs/%s/heartbeat", id), req, nil)
 }
 
 // RenewLeaseRequest is the request to renew a job's lease.
@@ -447,7 +492,7 @@ func (r *JobsResource) RenewLease(ctx context.Context, id string, req *RenewLeas
 		LeaseDurationSec: &req.LeaseDurationSec,
 		LeaseID:          req.LeaseID,
 	}
-	if err := r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/heartbeat", id), hbReq, &result); err != nil {
+	if err := r.base.PostAck(ctx, fmt.Sprintf("/api/v1/jobs/%s/heartbeat", id), hbReq, &result); err != nil {
 		return nil, err
 	}
 	result.Success = true
@@ -455,14 +500,23 @@ func (r *JobsResource) RenewLease(ctx context.Context, id string, req *RenewLeas
 }
 
 // UpdateProgressRequest is the request to update job progress.
+//
+// Deprecated: the Spooled API has no job progress route.
 type UpdateProgressRequest struct {
 	Progress float64 `json:"progress"`
 	Message  string  `json:"message,omitempty"`
 }
 
-// UpdateProgress updates the progress of a job.
-func (r *JobsResource) UpdateProgress(ctx context.Context, id string, req *UpdateProgressRequest) error {
-	return r.base.Post(ctx, fmt.Sprintf("/api/v1/jobs/%s/progress", id), req, nil)
+// UpdateProgress always returns an UnsupportedError and makes no request.
+//
+// Deprecated: the Spooled API has no job progress route
+// (POST /jobs/{id}/progress was answered with 404 every time). Put progress in
+// the job result, or log it from the handler with JobContext.Log.
+func (r *JobsResource) UpdateProgress(_ context.Context, _ string, _ *UpdateProgressRequest) error {
+	return &UnsupportedError{
+		Operation: "Jobs.UpdateProgress",
+		Reason:    "the API has no job progress route; return progress in the job result or log it with JobContext.Log",
+	}
 }
 
 // DLQResource provides access to Dead Letter Queue operations.

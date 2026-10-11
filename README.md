@@ -121,15 +121,17 @@ func main() {
     w.Process(func(ctx *worker.JobContext) (map[string]any, error) {
         fmt.Printf("Processing job %s\n", ctx.JobID)
         
-        // Access payload
-        to := ctx.Payload["to"].(string)
-        subject := ctx.Payload["subject"].(string)
+        // Access payload. Check the assertion: a payload without the key would
+        // otherwise panic (the worker recovers it and fails the job with the panic
+        // text, but a missing field is better reported as a plain error).
+        to, ok := ctx.Payload["to"].(string)
+        if !ok {
+            return nil, fmt.Errorf("payload has no string \"to\"")
+        }
+        subject, _ := ctx.Payload["subject"].(string)
         
         // Do your work here
         fmt.Printf("Sending email to %s: %s\n", to, subject)
-        
-        // Report progress
-        ctx.Progress(50, "Email sent")
         
         return map[string]any{"sent": true}, nil
     })
@@ -145,13 +147,14 @@ func main() {
         log.Fatal(err)
     }
 
-    // Graceful shutdown
+    // Graceful shutdown: on SIGTERM stop claiming, let running handlers finish
+    // (up to Options.ShutdownTimeout), send their results, then deregister.
     sigCh := make(chan os.Signal, 1)
     signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
     <-sigCh
 
-    cancel()
-    w.Stop()
+    cancel() // starts the drain; running handlers keep their contexts
+    w.Stop() // blocks until the drain has finished
 }
 ```
 
@@ -294,11 +297,13 @@ w.Process(func(ctx *worker.JobContext) (map[string]any, error) {
     // ctx.Context - Go context with cancellation
     // ctx.JobID - Unique job ID
     // ctx.QueueName - Queue name
-    // ctx.Payload - Job payload
+    // ctx.Payload - Job payload when it is a JSON object (nil otherwise)
+    // ctx.RawPayload - Job payload of any JSON type (array, string, number...)
     // ctx.RetryCount - Current retry attempt
     // ctx.MaxRetries - Maximum retries
-    // ctx.Progress(percent, message) - Report progress
     // ctx.Log(level, message, meta) - Log messages
+    // (ctx.Progress is deprecated: the API has no progress route, it returns
+    // an error that matches spooled.ErrUnsupported)
     
     return map[string]any{"result": "success"}, nil
 })
@@ -320,12 +325,40 @@ w.OnEvent(func(event worker.Event) {
 
 // The worker automatically echoes the claim's LeaseID on heartbeat and settlement.
 // A stale lease cancels that handler context and emits EventJobLeaseLost.
-ctx := context.Background()
+ctx, cancel := context.WithCancel(context.Background())
 w.Start(ctx)
 
-// Graceful shutdown
+// Graceful shutdown (SIGTERM handler): cancelling ctx and calling Stop do the
+// same thing, and Stop blocks until it is finished.
+cancel()
 w.Stop()
 ```
+
+How the worker behaves:
+
+- **Shutdown drains.** `Stop` (or cancelling the context passed to `Start`)
+  stops claiming new jobs and gives running handlers up to `ShutdownTimeout` to
+  finish with their contexts still live. A handler that returns in that window
+  has its result sent (`complete`, or `fail` if it returned an error) before the
+  worker deregisters. Only handlers still running when the timeout expires are
+  canceled, and their jobs failed with `Worker shutdown timeout`. A handler that
+  ignores its context keeps running (Go cannot kill a goroutine), but the worker
+  stops waiting for it. Do not call `Stop` from inside a handler or event
+  callback.
+- **Panics are job failures.** A panic in a handler is recovered and the job is
+  failed with the panic text (`panic: ...`); the worker and its other jobs keep
+  running.
+- **Job timeouts.** A job with `timeout_seconds` set is canceled and failed with
+  `Job timeout exceeded` when it runs longer (`worker.EventJobTimeout`); its
+  lease stops being renewed.
+- **Acknowledgements are retried.** `complete`, `fail`, job heartbeats and worker
+  heartbeats are retried on network errors, timeouts, `408`, `429` and `5xx`
+  with the client's retry settings, and they ignore an open circuit breaker.
+- **Failure text is always accepted.** An empty error becomes `Job failed` and
+  anything longer than 2048 characters is truncated (the API rejects both).
+- **Numbers keep their precision.** Payload and result numbers are `float64`,
+  except an integer too large for a `float64` (above 2^53, such as a Discord
+  ID), which arrives as a `json.Number`: `n.Int64()`.
 
 `WorkerID` is optional but worth setting. It must be 1-128 characters from
 `[A-Za-z0-9._-]`, and keeping it the same across restarts makes registration an
@@ -436,6 +469,10 @@ ws.OnStateChange(func(state realtime.ConnectionState) {
 ws.Connect()
 ws.Subscribe(realtime.SubscriptionFilter{QueueName: "my-queue"})
 
+// Clients reconnect with backoff by default (the server closes every stream
+// after 30 minutes). Set DisableAutoReconnect: true to turn that off. Events up
+// to 4 MiB are read; raise or lower it with ConnectionOptions.MaxMessageBytes.
+
 // SSE client (unidirectional)
 sse := realtime.NewSSEClient(realtime.ConnectionOptions{
     BaseURL: "https://api.spooled.cloud",
@@ -449,11 +486,19 @@ sse.OnEvent(func(event *realtime.Event) {
 sse.ConnectWithFilter(&realtime.SubscriptionFilter{
     QueueName: "my-queue",
 })
+// The API key is sent in the Authorization header, never in the URL.
+// A job.status_changed event carries OldStatus/NewStatus (and Status = NewStatus).
 ```
 
 ### gRPC (High Performance)
 
-Use gRPC for high-throughput scenarios:
+Use gRPC for high-throughput scenarios. TLS is on for port 443 and off for any
+other port (so `localhost:50051` is plaintext); force it either way with
+`grpc.ClientOptions.UseTLS` or, through the high-level client,
+`spooled.WithGRPCTLS(true)` / `spooled.WithGRPCOptions(...)` (custom
+`tls.Config`, dial options). Payloads and results may hold any JSON-encodable
+Go value; one that cannot be encoded returns an error instead of being dropped.
+`Fail` retries the job (up to its `max_retries`) unless `NoRetry: true`.
 
 ```go
 import "github.com/spooled-cloud/spooled-sdk-go/spooled/grpc"
@@ -620,9 +665,10 @@ if err != nil {
         fmt.Printf("Invalid API key: %s\n", e.Message)
     case *spooled.RateLimitError:
         // 429 covers both per-second rate limiting and plan-quota errors.
-        // A plan quota carries Code == "QUOTA_EXCEEDED" (with resource/current/limit/plan details).
-        if e.Code == "QUOTA_EXCEEDED" {
-            fmt.Printf("Plan quota exceeded: %s\n", e.Message)
+        // A plan quota (spooled.IsQuotaExceeded) is never retried by the SDK and
+        // never trips the circuit breaker; its details are in e.Quota.
+        if e.IsQuotaExceeded() {
+            fmt.Printf("Plan quota exceeded: %s (%d/%d on the %s plan)\n", e.Message, e.Quota.Current, e.Quota.Limit, e.Quota.Plan)
         } else {
             fmt.Printf("Rate limited. Retry after: %v\n", e.Reset)
         }
@@ -631,6 +677,13 @@ if err != nil {
     default:
         fmt.Printf("Error: %v\n", err)
     }
+}
+
+// Methods whose operation the API does not offer (Ingest().GitHub/Stripe,
+// Jobs().UpdateProgress, Organizations().ClearWebhookToken, JobContext.Progress)
+// fail without a network call:
+if errors.Is(err, spooled.ErrUnsupported) {
+    // not supported by the Spooled API
 }
 
 // Check error types

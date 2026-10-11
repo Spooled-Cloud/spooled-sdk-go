@@ -204,6 +204,12 @@ type Request struct {
 	Headers     map[string]string
 	UseAdminKey bool
 	Idempotent  bool // If true, can be retried for POST
+	// SkipCircuitBreaker sends the request even while the breaker is open and
+	// keeps its outcome out of the breaker's accounting. It is for worker acks
+	// (complete, fail, heartbeat): they are lease-fenced and idempotent, and
+	// dropping a finished job's result because an unrelated call tripped the
+	// breaker loses work the server would happily accept.
+	SkipCircuitBreaker bool
 }
 
 // Response represents an HTTP response.
@@ -217,7 +223,11 @@ type Response struct {
 // Do executes an HTTP request with retry and circuit breaker logic.
 func (t *Transport) Do(ctx context.Context, req *Request) (*Response, error) {
 	// Check circuit breaker
-	if t.circuitBreaker != nil && !t.circuitBreaker.Allow() {
+	breaker := t.circuitBreaker
+	if req.SkipCircuitBreaker {
+		breaker = nil
+	}
+	if breaker != nil && !breaker.Allow() {
 		return nil, NewCircuitBreakerOpenError()
 	}
 
@@ -256,8 +266,8 @@ retryLoop:
 		resp, err := t.doOnce(ctx, req)
 		if err == nil {
 			// Success - record for circuit breaker
-			if t.circuitBreaker != nil {
-				t.circuitBreaker.RecordSuccess()
+			if breaker != nil {
+				breaker.RecordSuccess()
 			}
 			return resp, nil
 		}
@@ -293,12 +303,16 @@ retryLoop:
 	//     transport trouble and count as a breaker failure;
 	//   - non-retryable errors are client/validation errors (4xx) where the
 	//     backend responded correctly, so they are treated as healthy and do
-	//     NOT trip the breaker.
-	if t.circuitBreaker != nil {
-		if IsRetryable(lastErr) {
-			t.circuitBreaker.RecordFailure()
+	//     NOT trip the breaker. That includes a 429 QUOTA_EXCEEDED (the backend
+	//     is fine, the plan is full);
+	//   - a request the caller canceled says nothing about backend health, so it
+	//     is not a failure either (a worker's claim poll canceled at shutdown
+	//     used to count as one).
+	if breaker != nil {
+		if IsRetryable(lastErr) && !errors.Is(lastErr, context.Canceled) {
+			breaker.RecordFailure()
 		} else {
-			t.circuitBreaker.RecordSuccess()
+			breaker.RecordSuccess()
 		}
 	}
 

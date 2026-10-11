@@ -2,13 +2,9 @@ package resources
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 )
@@ -23,6 +19,13 @@ func NewIngestResource(transport *httpx.Transport) *IngestResource {
 	return &IngestResource{base: NewBase(transport)}
 }
 
+// ErrWebhookTokenRequired is returned by Ingest().Custom when the request has no
+// webhook token. The API authenticates POST /webhooks/{org_id}/custom with the
+// organization's webhook token (X-Webhook-Token) and answers every call without
+// a valid one with 401, so the call is refused before it reaches the network.
+var ErrWebhookTokenRequired = errors.New("spooled: webhook ingestion needs the organization's webhook token " +
+	"(set CustomWebhookRequest.WebhookToken, or use CustomWithToken; Organizations().GetWebhookToken returns it)")
+
 // CustomWebhookRequest is the request to ingest a custom webhook.
 type CustomWebhookRequest struct {
 	QueueName      string         `json:"queue_name"`
@@ -30,6 +33,10 @@ type CustomWebhookRequest struct {
 	Payload        map[string]any `json:"payload"`
 	IdempotencyKey *string        `json:"idempotency_key,omitempty"`
 	Priority       *int           `json:"priority,omitempty"`
+	// WebhookToken is the organization's webhook token, sent as the
+	// X-Webhook-Token header (never in the body). Ingest().Custom requires it;
+	// CustomWithToken takes the token as an argument instead.
+	WebhookToken string `json:"-"`
 }
 
 // CustomWebhookResponse is POST /webhooks/{org_id}/custom (OpenAPI WebhookResponse).
@@ -39,16 +46,18 @@ type CustomWebhookResponse struct {
 	Status    string `json:"status"`
 }
 
-// Custom ingests a custom webhook for an organization.
+// Custom ingests a custom webhook for an organization, authenticating with
+// req.WebhookToken (the X-Webhook-Token header).
 //
 // POST /webhooks/{org_id}/custom returns {job_id, queue_name, status}. An
-// older empty 200 maps to a zero response rather than an error.
+// older empty 200 maps to a zero response rather than an error. Without a
+// token it returns ErrWebhookTokenRequired and makes no request: the API
+// rejects an unauthenticated ingest with 401 unconditionally.
 func (r *IngestResource) Custom(ctx context.Context, orgID string, req *CustomWebhookRequest) (*CustomWebhookResponse, error) {
-	var result CustomWebhookResponse
-	if err := r.base.Post(ctx, fmt.Sprintf("/api/v1/webhooks/%s/custom", orgID), req, &result); err != nil {
-		return nil, err
+	if req == nil || req.WebhookToken == "" {
+		return nil, ErrWebhookTokenRequired
 	}
-	return &result, nil
+	return r.CustomWithToken(ctx, orgID, req.WebhookToken, req)
 }
 
 // CustomWithToken ingests a custom webhook using a webhook token via the X-Webhook-Token header.
@@ -75,122 +84,58 @@ func (r *IngestResource) CustomWithToken(ctx context.Context, orgID, webhookToke
 }
 
 // GitHubIngestOptions configures GitHub webhook ingestion.
+//
+// Deprecated: the Spooled API has no GitHub ingestion route.
 type GitHubIngestOptions struct {
-	// GitHubEvent is the GitHub event name (required), e.g. "push".
+	// GitHubEvent is the GitHub event name, e.g. "push".
 	GitHubEvent string
-	// Signature is the full X-Hub-Signature-256 value (optional if Secret is provided).
+	// Signature is the X-Hub-Signature-256 value.
 	Signature string
-	// Secret is used to compute the signature if Signature is not provided.
+	// Secret was used to compute the signature.
 	Secret string
-	// WebhookToken is optional and sent as X-Webhook-Token.
+	// WebhookToken is sent as X-Webhook-Token.
 	WebhookToken string
-	// ForwardedProto is optional and sent as X-Forwarded-Proto.
+	// ForwardedProto is sent as X-Forwarded-Proto.
 	ForwardedProto string
 }
 
 // StripeIngestOptions configures Stripe webhook ingestion.
+//
+// Deprecated: the Spooled API has no Stripe ingestion route.
 type StripeIngestOptions struct {
-	// Timestamp used for signature payload. If 0, current time is used.
+	// Timestamp used for the signature payload.
 	Timestamp int64
-	// Signature is the full Stripe-Signature header value (optional if Secret is provided).
+	// Signature is the Stripe-Signature header value.
 	Signature string
-	// Secret is used to compute the signature if Signature is not provided.
+	// Secret was used to compute the signature.
 	Secret string
-	// WebhookToken is optional and sent as X-Webhook-Token.
+	// WebhookToken is sent as X-Webhook-Token.
 	WebhookToken string
-	// ForwardedProto is optional and sent as X-Forwarded-Proto.
+	// ForwardedProto is sent as X-Forwarded-Proto.
 	ForwardedProto string
 }
 
-// GitHub ingests a GitHub webhook. The request body must be the exact raw bytes GitHub sent.
-// POST /api/v1/webhooks/{org_id}/github
-func (r *IngestResource) GitHub(ctx context.Context, orgID string, rawBody []byte, opts *GitHubIngestOptions) error {
-	if opts == nil {
-		return fmt.Errorf("GitHub ingest options are required")
+// GitHub always returns an UnsupportedError and makes no request.
+//
+// Deprecated: the API serves only POST /webhooks/{org_id}/custom. Its GitHub
+// and Stripe handlers were removed server side, so this call used to get a 404
+// every time. Forward GitHub events to Custom/CustomWithToken (the JSON body
+// goes in Payload), or enqueue the job yourself with Jobs().Create.
+func (r *IngestResource) GitHub(_ context.Context, _ string, _ []byte, _ *GitHubIngestOptions) error {
+	return &UnsupportedError{
+		Operation: "Ingest.GitHub",
+		Reason:    "the API serves only POST /webhooks/{org_id}/custom; forward the event with CustomWithToken or enqueue it with Jobs().Create",
 	}
-	if opts.GitHubEvent == "" {
-		return fmt.Errorf("GitHubEvent is required")
-	}
-
-	signature := opts.Signature
-	if signature == "" && opts.Secret != "" {
-		signature = githubSignature(opts.Secret, rawBody)
-	}
-	if signature == "" {
-		return fmt.Errorf("GitHub signature is required (provide Signature or Secret)")
-	}
-
-	headers := map[string]string{
-		"Content-Type":        "application/json",
-		"X-GitHub-Event":      opts.GitHubEvent,
-		"X-Hub-Signature-256": signature,
-	}
-	if opts.WebhookToken != "" {
-		headers["X-Webhook-Token"] = opts.WebhookToken
-	}
-	if opts.ForwardedProto != "" {
-		headers["X-Forwarded-Proto"] = opts.ForwardedProto
-	}
-
-	_, err := r.base.transport.Do(ctx, &httpx.Request{
-		Method:  http.MethodPost,
-		Path:    fmt.Sprintf("/api/v1/webhooks/%s/github", orgID),
-		RawBody: rawBody,
-		Headers: headers,
-	})
-	return err
 }
 
-// Stripe ingests a Stripe webhook. The request body must be the exact raw bytes Stripe sent.
-// POST /api/v1/webhooks/{org_id}/stripe
-func (r *IngestResource) Stripe(ctx context.Context, orgID string, rawBody []byte, opts *StripeIngestOptions) error {
-	if opts == nil {
-		opts = &StripeIngestOptions{}
+// Stripe always returns an UnsupportedError and makes no request.
+//
+// Deprecated: the API serves only POST /webhooks/{org_id}/custom (Stripe
+// billing events are handled internally at /billing/webhook). Forward the event
+// to Custom/CustomWithToken or enqueue the job yourself with Jobs().Create.
+func (r *IngestResource) Stripe(_ context.Context, _ string, _ []byte, _ *StripeIngestOptions) error {
+	return &UnsupportedError{
+		Operation: "Ingest.Stripe",
+		Reason:    "the API serves only POST /webhooks/{org_id}/custom; forward the event with CustomWithToken or enqueue it with Jobs().Create",
 	}
-
-	timestamp := opts.Timestamp
-	if timestamp == 0 {
-		timestamp = time.Now().Unix()
-	}
-
-	signature := opts.Signature
-	if signature == "" && opts.Secret != "" {
-		signature = stripeSignature(opts.Secret, rawBody, timestamp)
-	}
-	if signature == "" {
-		return fmt.Errorf("Stripe signature is required (provide Signature or Secret)")
-	}
-
-	headers := map[string]string{
-		"Content-Type":     "application/json",
-		"Stripe-Signature": signature,
-	}
-	if opts.WebhookToken != "" {
-		headers["X-Webhook-Token"] = opts.WebhookToken
-	}
-	if opts.ForwardedProto != "" {
-		headers["X-Forwarded-Proto"] = opts.ForwardedProto
-	}
-
-	_, err := r.base.transport.Do(ctx, &httpx.Request{
-		Method:  http.MethodPost,
-		Path:    fmt.Sprintf("/api/v1/webhooks/%s/stripe", orgID),
-		RawBody: rawBody,
-		Headers: headers,
-	})
-	return err
-}
-
-func githubSignature(secret string, body []byte) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write(body)
-	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
-}
-
-func stripeSignature(secret string, body []byte, timestamp int64) string {
-	// Stripe signs: `${timestamp}.${rawBodyUtf8}`
-	payload := strconv.FormatInt(timestamp, 10) + "." + string(body)
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(payload))
-	return "t=" + strconv.FormatInt(timestamp, 10) + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }

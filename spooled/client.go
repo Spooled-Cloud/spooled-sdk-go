@@ -32,6 +32,10 @@ type SpooledWorkerOptions struct {
 	WorkerType string
 	// Version is the worker version (default: SDK version).
 	Version string
+	// ShutdownTimeout is how long Stop lets running handlers finish before they
+	// are canceled and their jobs failed with "Worker shutdown timeout"
+	// (default: 30s).
+	ShutdownTimeout time.Duration
 	// Metadata contains additional worker metadata.
 	Metadata map[string]string
 	// handler is the job handler function (internal)
@@ -43,11 +47,18 @@ type SpooledWorker struct {
 	jobs    *resources.JobsResource
 	workers *resources.WorkersResource
 	opts    SpooledWorkerOptions
-	worker  *worker.Worker
+
+	mu     sync.Mutex
+	worker *worker.Worker // set only once Start has succeeded
 }
 
-// Start starts the worker.
+// Start starts the worker. It returns nil without doing anything if the worker
+// is already running. If registration fails it returns the error and leaves the
+// worker stopped, so calling Start again retries registration.
 func (w *SpooledWorker) Start() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if w.worker != nil {
 		return nil // Already started
 	}
@@ -82,26 +93,29 @@ func (w *SpooledWorker) Start() error {
 
 	// Create low-level worker
 	workerOpts := worker.Options{
-		QueueName:     opts.QueueName,
-		Concurrency:   opts.Concurrency,
-		PollInterval:  opts.PollInterval,
-		LeaseDuration: opts.LeaseDuration,
-		Hostname:      opts.Hostname,
-		WorkerType:    opts.WorkerType,
-		Version:       opts.Version,
-		Metadata:      opts.Metadata,
+		QueueName:       opts.QueueName,
+		Concurrency:     opts.Concurrency,
+		PollInterval:    opts.PollInterval,
+		LeaseDuration:   opts.LeaseDuration,
+		Hostname:        opts.Hostname,
+		WorkerType:      opts.WorkerType,
+		Version:         opts.Version,
+		ShutdownTimeout: opts.ShutdownTimeout,
+		Metadata:        opts.Metadata,
 	}
 
-	w.worker = worker.NewWorker(w.jobs, w.workers, workerOpts)
+	lowLevel := worker.NewWorker(w.jobs, w.workers, workerOpts)
 
 	// Set handler if provided
 	if w.opts.handler != nil {
-		w.worker.Process(func(ctx *worker.JobContext) (map[string]any, error) {
-			// Convert to simple job struct for the handler
+		lowLevel.Process(func(ctx *worker.JobContext) (map[string]any, error) {
+			// Convert to simple job struct for the handler. RawPayload, not
+			// Payload: Payload is a nil map for an array/string/number payload,
+			// and a nil map stored in an `any` is not equal to nil.
 			job := &resources.Job{
 				ID:         ctx.JobID,
 				QueueName:  ctx.QueueName,
-				Payload:    ctx.Payload,
+				Payload:    ctx.RawPayload,
 				RetryCount: ctx.RetryCount,
 				MaxRetries: ctx.MaxRetries,
 			}
@@ -114,19 +128,33 @@ func (w *SpooledWorker) Start() error {
 		})
 	}
 
-	return w.worker.Start(context.Background())
+	// Only a worker that registered is kept: a failed Start must not look
+	// started, or the next Start call would return nil and nothing would poll.
+	if err := lowLevel.Start(context.Background()); err != nil {
+		return err
+	}
+	w.worker = lowLevel
+	return nil
 }
 
-// Stop stops the worker.
+// Stop gracefully stops the worker: it stops claiming jobs, waits up to
+// ShutdownTimeout for running handlers to finish and acknowledges them, then
+// deregisters. It blocks until that is done.
 func (w *SpooledWorker) Stop() error {
-	if w.worker == nil {
+	w.mu.Lock()
+	lowLevel := w.worker
+	w.mu.Unlock()
+
+	if lowLevel == nil {
 		return nil
 	}
-	return w.worker.Stop()
+	return lowLevel.Stop()
 }
 
 // Process registers a job handler function.
 func (w *SpooledWorker) Process(handler func(context.Context, *resources.Job) (any, error)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.worker != nil {
 		panic("cannot set handler after starting worker")
 	}
@@ -254,6 +282,12 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closed = true
+	// The gRPC connection is dialed lazily by GRPC() and owned by this client.
+	if c.grpcClient != nil {
+		err := c.grpcClient.Close()
+		c.grpcClient = nil
+		return err
+	}
 	return nil
 }
 
@@ -343,6 +377,9 @@ func (c *Client) Ingest() *resources.IngestResource {
 //
 // Note: This method dials the gRPC server the first time it is called.
 // Callers should handle connection errors (e.g., local dev without gRPC running).
+// TLS is on for port 443 and off for other ports (so "localhost:50051" is
+// plaintext); use WithGRPCTLS or WithGRPCOptions to override that or to supply a
+// tls.Config. Client.Close closes the connection.
 func (c *Client) GRPC() (*grpc.Client, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -351,10 +388,17 @@ func (c *Client) GRPC() (*grpc.Client, error) {
 		return c.grpcClient, nil
 	}
 
+	timeout := c.cfg.GRPC.Timeout
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
 	grpcClient, err := grpc.NewClient(grpc.ClientOptions{
-		Address: c.cfg.GRPCAddress,
-		APIKey:  c.cfg.APIKey,
-		Timeout: 5 * time.Second,
+		Address:     c.cfg.GRPCAddress,
+		APIKey:      c.cfg.APIKey,
+		UseTLS:      c.cfg.GRPC.UseTLS,
+		TLSConfig:   c.cfg.GRPC.TLSConfig,
+		DialOptions: c.cfg.GRPC.DialOptions,
+		Timeout:     timeout,
 	})
 	if err != nil {
 		return nil, err

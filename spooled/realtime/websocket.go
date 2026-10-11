@@ -17,6 +17,7 @@ type WebSocketClient struct {
 	conn              *websocket.Conn
 	state             ConnectionState
 	reconnectAttempts int
+	connectedAt       time.Time
 	reconnectTimer    *time.Timer
 	subscriptions     map[string]SubscriptionFilter
 
@@ -39,22 +40,10 @@ type WebSocketClient struct {
 
 // NewWebSocketClient creates a new WebSocket realtime client.
 func NewWebSocketClient(opts ConnectionOptions) *WebSocketClient {
-	defaults := DefaultConnectionOptions()
 	if opts.WSURL == "" {
-		opts.WSURL = defaults.WSURL
+		opts.WSURL = DefaultConnectionOptions().WSURL
 	}
-	if opts.BaseURL == "" {
-		opts.BaseURL = defaults.BaseURL
-	}
-	if opts.ReconnectDelay == 0 {
-		opts.ReconnectDelay = defaults.ReconnectDelay
-	}
-	if opts.MaxReconnectDelay == 0 {
-		opts.MaxReconnectDelay = defaults.MaxReconnectDelay
-	}
-	if opts.MaxReconnectAttempts == 0 {
-		opts.MaxReconnectAttempts = defaults.MaxReconnectAttempts
-	}
+	opts.applyDefaults()
 
 	return &WebSocketClient{
 		opts:                opts,
@@ -125,11 +114,16 @@ func (c *WebSocketClient) doConnect() error {
 		return fmt.Errorf("websocket dial failed: %w", err)
 	}
 
+	// coder/websocket reads at most 32 KiB per message unless told otherwise, and
+	// a job.completed event carries the whole job result. An oversized message
+	// closes the connection, so raise the limit.
+	conn.SetReadLimit(int64(c.opts.MaxMessageBytes))
+
 	c.mu.Lock()
 	c.conn = conn
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.done = make(chan struct{})
-	c.reconnectAttempts = 0
+	c.connectedAt = time.Now()
 	c.setState(StateConnected)
 	c.mu.Unlock()
 
@@ -457,6 +451,12 @@ func (c *WebSocketClient) handleDisconnect() {
 		c.mu.Unlock()
 		return
 	}
+
+	// A connection that stayed up is not part of a failure streak (see SSEClient).
+	if !c.connectedAt.IsZero() && time.Since(c.connectedAt) >= stableConnection {
+		c.reconnectAttempts = 0
+	}
+	c.connectedAt = time.Time{}
 
 	c.reconnectAttempts++
 	if c.opts.MaxReconnectAttempts > 0 && c.reconnectAttempts > c.opts.MaxReconnectAttempts {

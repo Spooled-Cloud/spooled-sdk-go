@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
@@ -67,6 +68,27 @@ func (b *Base) PostIdempotent(ctx context.Context, path string, body any, result
 		Path:       path,
 		Body:       body,
 		Idempotent: true,
+	})
+	if err != nil {
+		return err
+	}
+	return decodeResponse(resp, result)
+}
+
+// PostAck performs a worker acknowledgement POST (complete, fail, heartbeat).
+//
+// Acks are lease-fenced, so repeating one is harmless: a duplicate is answered
+// with 409 and never applied twice. They are therefore retried on network
+// errors, timeouts, 408, 429 and 5xx like an idempotent request, and they ignore
+// an open circuit breaker. Losing an ack throws away finished work and leaves
+// the job "processing" until its lease expires.
+func (b *Base) PostAck(ctx context.Context, path string, body any, result any) error {
+	resp, err := b.transport.Do(ctx, &httpx.Request{
+		Method:             http.MethodPost,
+		Path:               path,
+		Body:               body,
+		Idempotent:         true,
+		SkipCircuitBreaker: true,
 	})
 	if err != nil {
 		return err
@@ -188,30 +210,28 @@ func (b *Base) AdminDelete(ctx context.Context, path string) error {
 }
 
 // decodeResponse decodes a response into the result if result is not nil.
+//
+// The body goes through a normalised intermediate tree first. That keeps the
+// historical leniency (a whole-number float such as 5.0 decodes into an int
+// field) while numbers that float64 cannot hold exactly - bigint IDs in job
+// payloads - survive as json.Number instead of being rounded. See numbers.go.
 func decodeResponse(resp *httpx.Response, result any) error {
-	if result == nil {
+	if result == nil || len(resp.Body) == 0 {
 		return nil
 	}
-	decoded, err := httpx.JSON[any](resp)
-	if err != nil {
-		return err
+	var tree any
+	if err := unmarshalJSON(resp.Body, &tree); err != nil {
+		return fmt.Errorf("failed to unmarshal response: %w", err)
 	}
-	// We need to re-unmarshal into the correct type
-	// This is a bit inefficient but works for all types
-	return remarshal(decoded, result)
-}
-
-// remarshal re-marshals a value into a target type.
-func remarshal(src, dst any) error {
-	if src == nil {
-		return nil
-	}
-	// Use JSON round-trip to convert types
-	data, err := json.Marshal(src)
+	data, err := json.Marshal(normalizeTree(tree))
 	if err != nil {
 		return fmt.Errorf("failed to marshal: %w", err)
 	}
-	return json.Unmarshal(data, dst)
+	if err := unmarshalJSON(data, result); err != nil {
+		return err
+	}
+	restoreNumbers(reflect.ValueOf(result))
+	return nil
 }
 
 // valuestoMap converts url.Values to map[string]string (taking first value).
@@ -238,4 +258,19 @@ func AddPaginationParams(v url.Values, limit, offset *int) {
 	if offset != nil {
 		v.Set("offset", strconv.Itoa(*offset))
 	}
+}
+
+// paginate applies offset and limit to a list that was filtered client-side.
+// Negative values are treated as unset.
+func paginate[T any](items []T, offset, limit *int) []T {
+	if offset != nil && *offset > 0 {
+		if *offset >= len(items) {
+			return []T{}
+		}
+		items = items[*offset:]
+	}
+	if limit != nil && *limit >= 0 && *limit < len(items) {
+		items = items[:*limit]
+	}
+	return items
 }

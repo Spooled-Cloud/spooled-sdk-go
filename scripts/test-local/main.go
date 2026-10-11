@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -1808,7 +1809,6 @@ func testGRPC(client *spooled.Client) {
 			JobID:    jobID,
 			WorkerID: wID,
 			Error:    "Test failure",
-			Retry:    true,
 		})
 		assertNoError(err)
 
@@ -2023,7 +2023,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 			JobID:    enqResult.JobID,
 			WorkerID: wID,
 			Error:    "Intentional failure to DLQ",
-			Retry:    false,
+			NoRetry:  true,
 		})
 		assertNoError(err)
 		log("Fail to DLQ succeeded")
@@ -2057,7 +2057,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 			JobID:    enqResult.JobID,
 			WorkerID: wID,
 			Error:    "Error: " + longError,
-			Retry:    false,
+			NoRetry:  true,
 		})
 		assertNoError(err)
 		log("Fail with 5000+ char error message succeeded")
@@ -3624,21 +3624,21 @@ func testWebhookIngestion(client *spooled.Client) {
 
 	queueName := fmt.Sprintf("%s-ingest", testPrefix)
 
-	r.Run("Ingest.Custom enqueues a job", func() {
-		resp, err := client.Ingest().Custom(ctx, orgID, &resources.CustomWebhookRequest{
+	r.Run("Ingest.Custom without a token is refused client-side", func() {
+		// The API always requires X-Webhook-Token; Custom without one must fail
+		// before any request instead of looking like an outage.
+		_, err := client.Ingest().Custom(ctx, orgID, &resources.CustomWebhookRequest{
 			QueueName: queueName,
-			Payload:   map[string]any{"source": "custom", "ts": time.Now().Unix()},
+			Payload:   map[string]any{"source": "custom"},
 		})
-		if err != nil {
-			// Ingest endpoint may not be available in all environments
-			log(fmt.Sprintf("Ingest.Custom not available: %v", err))
-			return
-		}
-		if resp != nil && resp.JobID != "" {
-			log(fmt.Sprintf("Ingest.Custom job: %s", resp.JobID))
-		} else {
-			log("Ingest.Custom accepted")
-		}
+		assertTrue(errors.Is(err, resources.ErrWebhookTokenRequired), "Custom without a token returns ErrWebhookTokenRequired")
+	})
+
+	r.Run("Ingest.GitHub / Stripe are unsupported", func() {
+		err := client.Ingest().GitHub(ctx, orgID, []byte("{}"), &resources.GitHubIngestOptions{GitHubEvent: "push", Secret: "s"})
+		assertTrue(errors.Is(err, resources.ErrUnsupported), "GitHub is unsupported")
+		err = client.Ingest().Stripe(ctx, orgID, []byte("{}"), &resources.StripeIngestOptions{Secret: "s"})
+		assertTrue(errors.Is(err, resources.ErrUnsupported), "Stripe is unsupported")
 	})
 
 	r.Run("Ingest.CustomWithToken uses X-Webhook-Token", func() {
@@ -3666,10 +3666,9 @@ func testWebhookIngestion(client *spooled.Client) {
 			QueueName: queueName,
 			Payload:   map[string]any{"source": "custom-token", "ts": time.Now().Unix()},
 		})
-		if err != nil {
-			log(fmt.Sprintf("Ingest.CustomWithToken not available: %v", err))
-			return
-		}
+		// A failure here is a real failure: it used to be logged and ignored, which
+		// hid that the ingest calls could never authenticate.
+		assertNoError(err)
 		if resp != nil && resp.JobID != "" {
 			log(fmt.Sprintf("Ingest.CustomWithToken job: %s", resp.JobID))
 		} else {

@@ -23,14 +23,14 @@ type SystemInfo struct {
 
 // JobSummaryStats contains job statistics for the dashboard.
 type JobSummaryStats struct {
-	Total               int  `json:"total"`
-	Pending             int  `json:"pending"`
-	Processing          int  `json:"processing"`
-	Completed24h        int  `json:"completed_24h"`
-	Failed24h           int  `json:"failed_24h"`
-	Deadletter          int  `json:"deadletter"`
-	AvgWaitTimeMs       *int `json:"avg_wait_time_ms,omitempty"`
-	AvgProcessingTimeMs *int `json:"avg_processing_time_ms,omitempty"`
+	Total               int      `json:"total"`
+	Pending             int      `json:"pending"`
+	Processing          int      `json:"processing"`
+	Completed24h        int      `json:"completed_24h"`
+	Failed24h           int      `json:"failed_24h"`
+	Deadletter          int      `json:"deadletter"`
+	AvgWaitTimeMs       *float64 `json:"avg_wait_time_ms,omitempty"`
+	AvgProcessingTimeMs *float64 `json:"avg_processing_time_ms,omitempty"`
 }
 
 // QueueSummary is a queue summary for the dashboard.

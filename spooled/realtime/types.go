@@ -93,20 +93,47 @@ type Event struct {
 
 // JobEvent contains data for job-related events.
 type JobEvent struct {
-	JobID       string            `json:"job_id"`
-	QueueName   string            `json:"queue_name"`
-	Status      string            `json:"status"`
-	Priority    int               `json:"priority,omitempty"`
-	RetryCount  int               `json:"retry_count,omitempty"`
-	Error       string            `json:"error,omitempty"`
-	Progress    float64           `json:"progress,omitempty"`
-	Result      map[string]any    `json:"result,omitempty"`
+	JobID     string `json:"job_id"`
+	QueueName string `json:"queue_name"`
+	// Status is the job's status. On job.status_changed the server sends
+	// old_status and new_status and no "status", so Status is filled from
+	// NewStatus; a handler comparing e.Status to "processing" therefore works.
+	Status string `json:"status"`
+	// OldStatus and NewStatus are sent with job.status_changed.
+	OldStatus  string  `json:"old_status,omitempty"`
+	NewStatus  string  `json:"new_status,omitempty"`
+	Priority   int     `json:"priority,omitempty"`
+	RetryCount int     `json:"retry_count,omitempty"`
+	Error      string  `json:"error,omitempty"`
+	Progress   float64 `json:"progress,omitempty"`
+	// DurationMs is how long the job ran; sent with job.completed.
+	DurationMs int64 `json:"duration_ms,omitempty"`
+	// Result is the job result when it is a JSON object, and nil otherwise.
+	// RawResult has the result whatever its JSON type; a non-object result used to
+	// make the whole event fail to decode and silently disappear.
+	Result      map[string]any    `json:"-"`
+	RawResult   any               `json:"result,omitempty"`
 	WorkerID    string            `json:"worker_id,omitempty"`
+	Timestamp   time.Time         `json:"timestamp,omitempty"`
 	ScheduledAt *time.Time        `json:"scheduled_at,omitempty"`
 	StartedAt   *time.Time        `json:"started_at,omitempty"`
 	CompletedAt *time.Time        `json:"completed_at,omitempty"`
 	FailedAt    *time.Time        `json:"failed_at,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+}
+
+// UnmarshalJSON decodes a job event, mapping new_status onto Status and keeping a
+// non-object result instead of failing the event.
+func (e *JobEvent) UnmarshalJSON(data []byte) error {
+	type jobEventAlias JobEvent
+	if err := json.Unmarshal(data, (*jobEventAlias)(e)); err != nil {
+		return err
+	}
+	if e.Status == "" {
+		e.Status = e.NewStatus
+	}
+	e.Result, _ = e.RawResult.(map[string]any)
+	return nil
 }
 
 // QueueEvent contains data for queue-related events.
@@ -142,10 +169,23 @@ type ConnectionOptions struct {
 	Token string
 	// APIKey is the API key for authentication (alternative to Token)
 	APIKey string
-	// AutoReconnect enables automatic reconnection on disconnect
+	// AutoReconnect is ignored: reconnecting is on unless DisableAutoReconnect is
+	// set. A zero ConnectionOptions used to mean "never reconnect", so a client
+	// built from Client.Realtime/RealtimeSSE went silent for good the first time
+	// the connection dropped - and the server ends every stream after 30 minutes.
+	//
+	// Deprecated: use DisableAutoReconnect to turn reconnecting off.
 	AutoReconnect bool
-	// MaxReconnectAttempts is the maximum number of reconnect attempts (0 = unlimited)
+	// DisableAutoReconnect turns automatic reconnection off.
+	DisableAutoReconnect bool
+	// MaxReconnectAttempts is the maximum number of consecutive failed reconnect
+	// attempts before the client gives up (default: 10; negative = unlimited). The
+	// count restarts once a connection has stayed up for a while.
 	MaxReconnectAttempts int
+	// MaxMessageBytes is the largest event the client reads (default: 4 MiB). A
+	// job.completed event carries the job result, which can be large; an event
+	// over the limit drops the connection.
+	MaxMessageBytes int
 	// ReconnectDelay is the initial delay between reconnect attempts
 	ReconnectDelay time.Duration
 	// MaxReconnectDelay is the maximum delay between reconnect attempts
@@ -165,7 +205,37 @@ func DefaultConnectionOptions() ConnectionOptions {
 		MaxReconnectAttempts: 10,
 		ReconnectDelay:       1 * time.Second,
 		MaxReconnectDelay:    30 * time.Second,
+		MaxMessageBytes:      DefaultMaxMessageBytes,
 	}
+}
+
+// DefaultMaxMessageBytes is the default ConnectionOptions.MaxMessageBytes.
+const DefaultMaxMessageBytes = 4 << 20
+
+// stableConnection is how long a connection must stay up before the next drop is
+// treated as a fresh failure rather than part of a reconnect loop.
+const stableConnection = 10 * time.Second
+
+// applyDefaults fills the zero values of opts that have a default. Reconnecting
+// is on unless DisableAutoReconnect says otherwise.
+func (o *ConnectionOptions) applyDefaults() {
+	defaults := DefaultConnectionOptions()
+	if o.BaseURL == "" {
+		o.BaseURL = defaults.BaseURL
+	}
+	if o.ReconnectDelay == 0 {
+		o.ReconnectDelay = defaults.ReconnectDelay
+	}
+	if o.MaxReconnectDelay == 0 {
+		o.MaxReconnectDelay = defaults.MaxReconnectDelay
+	}
+	if o.MaxReconnectAttempts == 0 {
+		o.MaxReconnectAttempts = defaults.MaxReconnectAttempts
+	}
+	if o.MaxMessageBytes <= 0 {
+		o.MaxMessageBytes = defaults.MaxMessageBytes
+	}
+	o.AutoReconnect = !o.DisableAutoReconnect
 }
 
 // EventHandler is a callback for handling events.

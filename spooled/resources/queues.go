@@ -80,14 +80,16 @@ func (r *QueuesResource) UpdateConfig(ctx context.Context, name string, req *Upd
 
 // QueueStats represents queue statistics.
 type QueueStats struct {
-	QueueName           string `json:"queue_name"`
-	PendingJobs         int    `json:"pending_jobs"`
-	ProcessingJobs      int    `json:"processing_jobs"`
-	CompletedJobs24h    int    `json:"completed_jobs_24h"`
-	FailedJobs24h       int    `json:"failed_jobs_24h"`
-	AvgProcessingTimeMs *int   `json:"avg_processing_time_ms,omitempty"`
-	MaxJobAgeSeconds    *int   `json:"max_job_age_seconds,omitempty"`
-	ActiveWorkers       int    `json:"active_workers"`
+	QueueName        string `json:"queue_name"`
+	PendingJobs      int    `json:"pending_jobs"`
+	ProcessingJobs   int    `json:"processing_jobs"`
+	CompletedJobs24h int    `json:"completed_jobs_24h"`
+	FailedJobs24h    int    `json:"failed_jobs_24h"`
+	// AvgProcessingTimeMs is fractional (the API averages in floating point,
+	// e.g. 1523.456); decoding it into an int failed the whole response.
+	AvgProcessingTimeMs *float64 `json:"avg_processing_time_ms,omitempty"`
+	MaxJobAgeSeconds    *int     `json:"max_job_age_seconds,omitempty"`
+	ActiveWorkers       int      `json:"active_workers"`
 }
 
 // GetStats retrieves statistics for a queue.

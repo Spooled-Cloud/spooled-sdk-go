@@ -66,30 +66,61 @@ func TestAppendQueryParam(t *testing.T) {
 	}
 }
 
-func TestSSE_BuildURL_APIKeyGoesInQuery(t *testing.T) {
-	// With only an API key, it must be sent as ?api_key= (never X-API-Key).
-	c := NewSSEClient(ConnectionOptions{
-		BaseURL: "https://api.spooled.cloud",
-		APIKey:  "sp_live_secret",
-	})
-	got := c.buildSSEURL()
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("invalid SSE URL: %v", err)
+// TestSSE_APIKeyTravelsInAuthorizationHeaderNotURL is the regression test for
+// SDKGP-18: the long-lived API key used to be put into ?api_key=, which lands in
+// proxy/CDN access logs and tracing spans. The backend accepts the same key as a
+// Bearer header, so the URL must stay free of credentials.
+func TestSSE_APIKeyTravelsInAuthorizationHeaderNotURL(t *testing.T) {
+	type seen struct {
+		auth  string
+		query string
 	}
-	if u.Query().Get("api_key") != "sp_live_secret" {
-		t.Errorf("expected api_key query param, got URL %q", got)
-	}
+	got := make(chan seen, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case got <- seen{auth: r.Header.Get("Authorization"), query: r.URL.RawQuery}:
+		default:
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
 
-	// With a bearer token configured, the key must NOT be duplicated in the query.
-	c2 := NewSSEClient(ConnectionOptions{
-		BaseURL: "https://api.spooled.cloud",
-		Token:   "jwt-token",
-		APIKey:  "sp_live_secret",
-	})
-	got2 := c2.buildSSEURL()
-	if strings.Contains(got2, "api_key") {
-		t.Errorf("expected no api_key in query when token is set, got %q", got2)
+	for _, tc := range []struct {
+		name     string
+		opts     ConnectionOptions
+		wantAuth string
+	}{
+		{"api key", ConnectionOptions{BaseURL: server.URL, APIKey: "sp_live_secret"}, "Bearer sp_live_secret"},
+		{"token wins over api key", ConnectionOptions{BaseURL: server.URL, Token: "jwt-token", APIKey: "sp_live_secret"}, "Bearer jwt-token"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := NewSSEClient(tc.opts)
+			if u := c.buildSSEURL(); strings.Contains(u, "api_key") || strings.Contains(u, "sp_live_secret") {
+				t.Fatalf("SSE URL carries the credential: %q", u)
+			}
+			if err := c.ConnectWithFilter(&SubscriptionFilter{QueueName: "emails"}); err != nil {
+				t.Fatalf("connect: %v", err)
+			}
+			defer c.Disconnect()
+
+			select {
+			case s := <-got:
+				if s.auth != tc.wantAuth {
+					t.Errorf("Authorization = %q, want %q", s.auth, tc.wantAuth)
+				}
+				if strings.Contains(s.query, "api_key") || strings.Contains(s.query, "secret") {
+					t.Errorf("request query carries the credential: %q", s.query)
+				}
+				if !strings.Contains(s.query, "queue=emails") {
+					t.Errorf("filter missing from query %q", s.query)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("server never saw the SSE request")
+			}
+		})
 	}
 }
 

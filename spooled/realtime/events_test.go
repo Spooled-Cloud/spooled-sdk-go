@@ -143,9 +143,9 @@ func TestWebSocketSubscribe_SendsCmdShapeAndDoesNotBlock(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
 	c := NewWebSocketClient(ConnectionOptions{
-		WSURL:         wsURL,
-		Token:         "static-jwt", // static token => resolveToken skips login
-		AutoReconnect: false,
+		WSURL:                wsURL,
+		Token:                "static-jwt", // static token => resolveToken skips login
+		DisableAutoReconnect: true,
 	})
 	if err := c.Connect(); err != nil {
 		t.Fatalf("connect: %v", err)

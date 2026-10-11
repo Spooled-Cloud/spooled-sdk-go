@@ -19,6 +19,7 @@ type SSEClient struct {
 	resp              *http.Response
 	state             ConnectionState
 	reconnectAttempts int
+	connectedAt       time.Time
 	reconnectTimer    *time.Timer
 	filter            *SubscriptionFilter
 	httpClient        *http.Client
@@ -38,19 +39,7 @@ type SSEClient struct {
 
 // NewSSEClient creates a new SSE realtime client.
 func NewSSEClient(opts ConnectionOptions) *SSEClient {
-	defaults := DefaultConnectionOptions()
-	if opts.BaseURL == "" {
-		opts.BaseURL = defaults.BaseURL
-	}
-	if opts.ReconnectDelay == 0 {
-		opts.ReconnectDelay = defaults.ReconnectDelay
-	}
-	if opts.MaxReconnectDelay == 0 {
-		opts.MaxReconnectDelay = defaults.MaxReconnectDelay
-	}
-	if opts.MaxReconnectAttempts == 0 {
-		opts.MaxReconnectAttempts = defaults.MaxReconnectAttempts
-	}
+	opts.applyDefaults()
 
 	return &SSEClient{
 		opts:                opts,
@@ -99,12 +88,12 @@ func (c *SSEClient) doConnect() error {
 		return fmt.Errorf("failed to create SSE request: %w", err)
 	}
 
-	// The SSE data plane authenticates via a Bearer token (raw API key or JWT)
-	// or the ?api_key= query parameter added in buildSSEURL. It does NOT read
-	// X-API-Key. When a JWT/token is configured we send it as a Bearer token;
-	// a bare API key is carried in the query string instead.
-	if c.opts.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.opts.Token)
+	// The SSE data plane authenticates via a Bearer token - a JWT or the raw API
+	// key - and does NOT read X-API-Key. Always use the header: the legacy
+	// ?api_key= query form put the long-lived key into proxy and CDN access logs
+	// and tracing spans.
+	if credential := c.credential(); credential != "" {
+		req.Header.Set("Authorization", "Bearer "+credential)
 	}
 
 	req.Header.Set("Accept", "text/event-stream")
@@ -130,7 +119,7 @@ func (c *SSEClient) doConnect() error {
 	c.mu.Lock()
 	c.resp = resp
 	c.done = make(chan struct{})
-	c.reconnectAttempts = 0
+	c.connectedAt = time.Now()
 	c.setState(StateConnected)
 	c.mu.Unlock()
 
@@ -238,7 +227,15 @@ func (c *SSEClient) readLoop() {
 		return
 	}
 
+	// One SSE line carries a whole event (data: {...}), and job.completed includes
+	// the job result. The default 64 KiB scanner token made one large result drop
+	// the stream, and with reconnect on it then looped on the same event.
 	scanner := bufio.NewScanner(resp.Body)
+	initial := 64 * 1024
+	if initial > c.opts.MaxMessageBytes {
+		initial = c.opts.MaxMessageBytes // the scanner's limit is the larger of max and the buffer's capacity
+	}
+	scanner.Buffer(make([]byte, 0, initial), c.opts.MaxMessageBytes)
 	var eventType string
 	var data strings.Builder
 
@@ -249,9 +246,11 @@ func (c *SSEClient) readLoop() {
 		if line == "" {
 			if data.Len() > 0 {
 				c.handleSSEEvent(eventType, data.String())
-				eventType = ""
-				data.Reset()
 			}
+			// Reset even when the event had no data, so an "event:" line cannot
+			// leak its type onto the next event.
+			eventType = ""
+			data.Reset()
 			continue
 		}
 
@@ -387,6 +386,15 @@ func (c *SSEClient) handleDisconnect() {
 		return
 	}
 
+	// A connection that stayed up is not part of a failure streak. Resetting on
+	// every successful TCP connect instead let a server that accepts and then
+	// closes (or a repeating oversized event) reconnect forever without ever
+	// reaching MaxReconnectAttempts.
+	if !c.connectedAt.IsZero() && time.Since(c.connectedAt) >= stableConnection {
+		c.reconnectAttempts = 0
+	}
+	c.connectedAt = time.Time{}
+
 	c.reconnectAttempts++
 	if c.opts.MaxReconnectAttempts > 0 && c.reconnectAttempts > c.opts.MaxReconnectAttempts {
 		c.setState(StateDisconnected)
@@ -429,24 +437,27 @@ func (c *SSEClient) handleDisconnect() {
 	c.mu.Unlock()
 }
 
+// credential is the bearer credential for the stream: the JWT if one is
+// configured, otherwise the API key.
+func (c *SSEClient) credential() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.opts.Token != "" {
+		return c.opts.Token
+	}
+	return c.opts.APIKey
+}
+
 func (c *SSEClient) buildSSEURL() string {
 	baseURL := strings.TrimSuffix(c.opts.BaseURL, "/")
 	sseURL := baseURL + "/api/v1/events"
 
 	c.mu.RLock()
 	filter := c.filter
-	token := c.opts.Token
-	apiKey := c.opts.APIKey
 	c.mu.RUnlock()
 
+	// The credential travels in the Authorization header only, never the URL.
 	params := url.Values{}
-
-	// The data plane does not read X-API-Key; SSE authenticates via the
-	// api_key query parameter (or an Authorization Bearer token). Only send the
-	// key in the query when we are not already using a bearer token.
-	if token == "" && apiKey != "" {
-		params.Set("api_key", apiKey)
-	}
 
 	// Build query parameters from filter
 	if filter != nil {

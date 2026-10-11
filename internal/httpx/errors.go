@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -39,12 +40,13 @@ func (e *APIError) Unwrap() error {
 	return e.Err
 }
 
-// IsRetryable returns true if the error is retryable.
+// IsRetryable returns true if the error is retryable: 5xx, 408 and 429. Every
+// other 4xx is a deterministic rejection and retrying it cannot succeed.
 func (e *APIError) IsRetryable() bool {
 	if e.StatusCode >= 500 && e.StatusCode < 600 {
 		return true
 	}
-	return e.StatusCode == http.StatusTooManyRequests
+	return e.StatusCode == http.StatusTooManyRequests || e.StatusCode == http.StatusRequestTimeout
 }
 
 // AuthenticationError represents a 401 error.
@@ -77,17 +79,47 @@ type ValidationError struct{ *APIError }
 // Unwrap returns the underlying API error.
 func (e *ValidationError) Unwrap() error { return e.APIError }
 
+// QuotaInfo describes the plan limit behind a 429 QUOTA_EXCEEDED response.
+type QuotaInfo struct {
+	// Resource is the limited resource, e.g. "active_jobs" or "queues".
+	Resource string
+	// Current is the usage that tripped the limit.
+	Current int64
+	// Limit is the plan limit for Resource.
+	Limit int64
+	// Plan is the organization's plan tier.
+	Plan string
+	// UpgradeTo is the plan that lifts the limit, when the API names one.
+	UpgradeTo string
+}
+
 // RateLimitError represents a 429 error.
+//
+// A 429 comes in two kinds. A rate limit (RATE_LIMIT_EXCEEDED, usually with a
+// Retry-After header) clears by itself and is retried. A plan quota
+// (QUOTA_EXCEEDED, Quota != nil) only clears when the customer frees capacity or
+// upgrades, so it is never retried and never counts against the circuit breaker.
 type RateLimitError struct {
 	*APIError
 	RetryAfter time.Duration
 	Limit      int
 	Remaining  int
 	Reset      time.Time
+	// Quota is set when the 429 is a plan-limit rejection rather than a rate limit.
+	Quota *QuotaInfo
 }
 
 // Unwrap returns the underlying API error.
 func (e *RateLimitError) Unwrap() error { return e.APIError }
+
+// IsQuotaExceeded reports whether this 429 is a plan-limit rejection
+// (QUOTA_EXCEEDED) instead of a transient rate limit.
+func (e *RateLimitError) IsQuotaExceeded() bool { return e.Quota != nil }
+
+// IsRetryable is false for a plan quota: waiting does not free capacity, so
+// retrying only burns long sleeps and trips the circuit breaker for traffic
+// (worker acks, heartbeats) that is unrelated to the over-quota enqueue.
+func (e *RateLimitError) IsRetryable() bool { return e.Quota == nil }
 
 // GetRetryAfter returns the retry-after duration in seconds.
 func (e *RateLimitError) GetRetryAfter() int {
@@ -222,6 +254,7 @@ func parseDetails(raw json.RawMessage) map[string]any {
 
 func parseRateLimitError(baseErr *APIError, headers http.Header) *RateLimitError {
 	err := &RateLimitError{APIError: baseErr}
+	err.Quota = parseQuotaInfo(baseErr, headers)
 
 	if retryAfter := headers.Get("Retry-After"); retryAfter != "" {
 		if secs, parseErr := strconv.Atoi(retryAfter); parseErr == nil {
@@ -245,6 +278,46 @@ func parseRateLimitError(baseErr *APIError, headers http.Header) *RateLimitError
 	}
 
 	return err
+}
+
+// parseQuotaInfo returns the plan-limit details when a 429 is a quota rejection.
+//
+// The API answers an over-quota request with 429 and
+// {"error":"limit_exceeded","code":"QUOTA_EXCEEDED","resource":...,"current":...,
+// "limit":...,"plan":...}. It carries no Retry-After header, unlike a real rate
+// limit. A body with that plan-limit shape and no Retry-After is treated as a
+// quota even if an older server omitted the code.
+func parseQuotaInfo(baseErr *APIError, headers http.Header) *QuotaInfo {
+	var body struct {
+		Error     string `json:"error"`
+		Resource  string `json:"resource"`
+		Current   int64  `json:"current"`
+		Limit     *int64 `json:"limit"`
+		Plan      string `json:"plan"`
+		UpgradeTo string `json:"upgrade_to"`
+	}
+	if len(baseErr.RawBody) > 0 {
+		_ = json.Unmarshal(baseErr.RawBody, &body)
+	}
+
+	isQuota := strings.EqualFold(baseErr.Code, "QUOTA_EXCEEDED") || body.Error == "limit_exceeded"
+	if !isQuota && headers.Get("Retry-After") == "" && body.Resource != "" && body.Plan != "" && body.Limit != nil {
+		isQuota = true
+	}
+	if !isQuota {
+		return nil
+	}
+
+	info := &QuotaInfo{
+		Resource:  body.Resource,
+		Current:   body.Current,
+		Plan:      body.Plan,
+		UpgradeTo: body.UpgradeTo,
+	}
+	if body.Limit != nil {
+		info.Limit = *body.Limit
+	}
+	return info
 }
 
 // NewNetworkError creates a new network error.

@@ -143,9 +143,11 @@ type WorkerHeartbeatRequest struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
-// Heartbeat sends a heartbeat for a worker.
+// Heartbeat sends a heartbeat for a worker. It is retried on transient failures
+// (see Base.PostAck): a worker that misses heartbeats for two minutes is marked
+// offline and its jobs are released.
 func (r *WorkersResource) Heartbeat(ctx context.Context, id string, req *WorkerHeartbeatRequest) error {
-	return r.base.Post(ctx, fmt.Sprintf("/api/v1/workers/%s/heartbeat", id), req, nil)
+	return r.base.PostAck(ctx, fmt.Sprintf("/api/v1/workers/%s/heartbeat", id), req, nil)
 }
 
 // Deregister removes a worker registration.

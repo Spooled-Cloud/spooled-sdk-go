@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
+	"github.com/spooled-cloud/spooled-sdk-go/spooled/resources"
 )
 
 // The public error types below are aliases for the concrete error types that
@@ -59,6 +60,15 @@ type TimeoutError = httpx.TimeoutError
 // CircuitBreakerOpenError is returned when the circuit breaker is open.
 type CircuitBreakerOpenError = httpx.CircuitBreakerOpenError
 
+// QuotaInfo describes the plan limit behind a 429 QUOTA_EXCEEDED response. It is
+// available as RateLimitError.Quota.
+type QuotaInfo = httpx.QuotaInfo
+
+// UnsupportedError is returned by a deprecated SDK method whose operation the
+// Spooled API does not offer (job progress, GitHub/Stripe ingest, clearing the
+// webhook token). It fails without a network call and matches ErrUnsupported.
+type UnsupportedError = resources.UnsupportedError
+
 // IsSpooledError returns true if the error is (or wraps) a Spooled SDK API error.
 func IsSpooledError(err error) bool {
 	var spErr *APIError
@@ -75,8 +85,8 @@ func AsSpooledError(err error) (*APIError, bool) {
 	return nil, false
 }
 
-// IsRetryable returns true if the error is retryable (5xx, 429, network, or
-// timeout errors).
+// IsRetryable returns true if the error is retryable (5xx, 408, a rate-limit
+// 429, network, or timeout errors). A plan-quota 429 is not retryable.
 func IsRetryable(err error) bool {
 	if err == nil {
 		return false
@@ -142,6 +152,20 @@ func IsPayloadTooLargeError(err error) bool {
 	return errors.As(err, &payloadErr)
 }
 
+// IsQuotaExceeded returns true if the error is a 429 QUOTA_EXCEEDED plan-limit
+// rejection. Unlike a rate limit it is never retried: waiting does not free
+// capacity. The details are in the RateLimitError's Quota field.
+func IsQuotaExceeded(err error) bool {
+	var rateLimitErr *RateLimitError
+	return errors.As(err, &rateLimitErr) && rateLimitErr.IsQuotaExceeded()
+}
+
+// IsUnsupportedError returns true if the error comes from an SDK method whose
+// operation the Spooled API does not offer.
+func IsUnsupportedError(err error) bool {
+	return resources.IsUnsupportedError(err)
+}
+
 // IsServerError returns true if the error is a 5xx server error.
 func IsServerError(err error) bool {
 	var serverErr *ServerError
@@ -158,6 +182,10 @@ var (
 
 	// ErrCircuitOpen is returned when the circuit breaker is open.
 	ErrCircuitOpen = errors.New("circuit breaker is open")
+
+	// ErrUnsupported is matched (errors.Is) by every error from an SDK method
+	// whose operation the Spooled API does not offer.
+	ErrUnsupported = resources.ErrUnsupported
 )
 
 // ValidateAPIKey validates the format of an API key.

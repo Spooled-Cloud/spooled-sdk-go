@@ -2,9 +2,12 @@
 package spooled
 
 import (
+	"crypto/tls"
 	"fmt"
 	"strings"
 	"time"
+
+	googlegrpc "google.golang.org/grpc"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/version"
 )
@@ -66,6 +69,22 @@ func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
 	}
 }
 
+// GRPCOptions configures the gRPC client returned by Client.GRPC.
+type GRPCOptions struct {
+	// UseTLS forces TLS on or off. When nil, TLS is used for port 443 (or an
+	// address with no port) and plaintext for every other port, so a local dev
+	// server at "localhost:50051" works as is and a TLS endpoint on another port
+	// such as "grpc.example.com:8443" needs UseTLS set to true.
+	UseTLS *bool
+	// TLSConfig is a custom TLS configuration (root CAs, client certificates...).
+	// It is only used when TLS is on.
+	TLSConfig *tls.Config
+	// DialOptions are additional gRPC dial options.
+	DialOptions []googlegrpc.DialOption
+	// Timeout is the connection timeout (default: 5s).
+	Timeout time.Duration
+}
+
 // Logger is the interface for debug logging.
 type Logger interface {
 	Debug(msg string, keysAndValues ...any)
@@ -96,6 +115,8 @@ type Config struct {
 	WSURL string
 	// GRPCAddress is the gRPC server address.
 	GRPCAddress string
+	// GRPC holds the TLS and dial options for the gRPC client (Client.GRPC).
+	GRPC GRPCOptions
 
 	// Timeout is the request timeout.
 	Timeout time.Duration
@@ -163,6 +184,21 @@ func WithWSURL(url string) Option {
 func WithGRPCAddress(addr string) Option {
 	return func(c *Config) {
 		c.GRPCAddress = addr
+	}
+}
+
+// WithGRPCOptions sets the TLS and dial options of the gRPC client.
+func WithGRPCOptions(opts GRPCOptions) Option {
+	return func(c *Config) {
+		c.GRPC = opts
+	}
+}
+
+// WithGRPCTLS forces TLS on or off for the gRPC client, overriding the
+// port-based default.
+func WithGRPCTLS(enabled bool) Option {
+	return func(c *Config) {
+		c.GRPC.UseTLS = &enabled
 	}
 }
 

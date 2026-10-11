@@ -2,10 +2,10 @@ package resources
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
@@ -70,9 +70,10 @@ func (w *Workflow) UnmarshalJSON(data []byte) error {
 			Failed    int `json:"failed"`
 		} `json:"progress"`
 	}{workflowAlias: (*workflowAlias)(w)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := unmarshalJSON(data, &aux); err != nil {
 		return err
 	}
+	restoreNumbers(reflect.ValueOf(w)) // also for callers that json.Unmarshal a Workflow directly
 	if aux.Progress != nil {
 		if w.TotalJobs == 0 {
 			w.TotalJobs = aux.Progress.Total
