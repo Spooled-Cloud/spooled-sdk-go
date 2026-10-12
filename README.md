@@ -577,6 +577,12 @@ Go value; one that cannot be encoded returns an error instead of being dropped.
   which dead-letters it at once. `FailWithResponse` also returns `WillRetry` and
   `NextRetryDelaySecs`. (SDK 1.4.0 never put `NoRetry` on the wire, so such jobs
   were retried; 1.5.0 sends it.)
+- **`ProcessJobs`** (the bidirectional stream) settles with `pb` messages you
+  build yourself. To fail a job there without a retry, pass the message through
+  `grpc.SetNoRetry`, as in
+  `Fail: grpc.SetNoRetry(&pb.FailRequest{JobId: id, WorkerId: w, LeaseId: lease, Error: msg})`.
+  A plain `Retry: false` in a `pb.FailRequest` is not put on the wire, and the
+  server retries the job.
 - **Payloads are protobuf `Struct`s.** A payload or result is always a JSON
   object, and numbers are doubles: an integer of 2^53 or more (a Discord or
   Snowflake ID) arrives rounded, and a job created over REST with a non-object

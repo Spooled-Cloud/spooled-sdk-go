@@ -8,5 +8,5 @@
 | Realtime reconnect / limits / auth | `spooled/realtime/{types,sse,websocket}.go`, `realtime_contract_test.go` |
 | Deprecated "unsupported" methods | `spooled/resources/unsupported.go`, `contracts/parity.md` |
 | Workflow job routes | `contracts/parity.md` |
-| gRPC proto | `scripts/generate_grpc.sh` (copies `spooled-backend/proto/spooled.proto`), `TestProto_*` in `spooled/grpc/proto_contract_test.go`, changelog notes (proto commit, sha256, generator versions) |
+| gRPC proto | `scripts/generate_grpc.sh` (copies `spooled-backend/proto/spooled.proto` and applies the SDK override for `FailRequest.retry`), `sdkProtoOverrides` + `TestProto_*` in `spooled/grpc/proto_contract_test.go`, changelog notes (proto commit, sha256, generator versions) |
 | List filters / paging / history / webhook formats | `spooled/resources/{jobs,webhooks,ingest}.go`, `api_0122_test.go`, `contracts/parity.md` |

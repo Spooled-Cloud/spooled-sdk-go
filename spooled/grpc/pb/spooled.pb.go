@@ -673,7 +673,7 @@ type FailRequest struct {
 	// Omitted: retry according to the job's max_retries (same as REST).
 	// false: move to the dead-letter queue now. `optional` gives presence, so
 	// clients that never set the field no longer dead-letter on first failure.
-	Retry *bool `protobuf:"varint,4,opt,name=retry,proto3,oneof" json:"retry,omitempty"`
+	Retry bool `protobuf:"varint,4,opt,name=retry,proto3" json:"retry,omitempty"` // SDK copy: a plain bool, so false is not sent and means retry; grpc.SetNoRetry sends false.
 	// Lease fencing token from the dequeued Job. When set, the failure
 	// succeeds only if it matches the job's current lease.
 	LeaseId       string `protobuf:"bytes,5,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
@@ -733,8 +733,8 @@ func (x *FailRequest) GetError() string {
 }
 
 func (x *FailRequest) GetRetry() bool {
-	if x != nil && x.Retry != nil {
-		return *x.Retry
+	if x != nil {
+		return x.Retry
 	}
 	return false
 }
@@ -1980,14 +1980,13 @@ const file_spooled_proto_rawDesc = "" +
 	"\x06result\x18\x03 \x01(\v2\x17.google.protobuf.StructR\x06result\x12\x19\n" +
 	"\blease_id\x18\x04 \x01(\tR\aleaseId\",\n" +
 	"\x10CompleteResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x97\x01\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x88\x01\n" +
 	"\vFailRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1b\n" +
 	"\tworker_id\x18\x02 \x01(\tR\bworkerId\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\x12\x19\n" +
-	"\x05retry\x18\x04 \x01(\bH\x00R\x05retry\x88\x01\x01\x12\x19\n" +
-	"\blease_id\x18\x05 \x01(\tR\aleaseIdB\b\n" +
-	"\x06_retry\"z\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12\x14\n" +
+	"\x05retry\x18\x04 \x01(\bR\x05retry\x12\x19\n" +
+	"\blease_id\x18\x05 \x01(\tR\aleaseId\"z\n" +
 	"\fFailResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x1d\n" +
 	"\n" +
@@ -2219,7 +2218,6 @@ func file_spooled_proto_init() {
 	if File_spooled_proto != nil {
 		return
 	}
-	file_spooled_proto_msgTypes[7].OneofWrappers = []any{}
 	file_spooled_proto_msgTypes[16].OneofWrappers = []any{
 		(*ProcessRequest_Dequeue)(nil),
 		(*ProcessRequest_Complete)(nil),

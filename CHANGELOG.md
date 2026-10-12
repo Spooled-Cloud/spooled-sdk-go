@@ -8,19 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.5.0] - 2026-10-12
 
 Catches the SDK up with backend 0.1.122 and fixes what the production check of
-1.4.0 found. Everything is additive except the regenerated `spooled/grpc/pb`
-package (see **Notes**).
+1.4.0 found. The API changes are additive: code that compiles against 1.4.0,
+including code that builds `spooled/grpc/pb` messages itself, still compiles.
 
 ### Fixed
 
 - **gRPC `FailRequest.NoRetry` now dead-letters the job.** The backend made
   `FailRequest.retry` an `optional bool` (absent = retry per `max_retries`), but
-  the SDK still generated a plain proto3 `bool`, whose `false` is never put on
-  the wire: the server read every `NoRetry: true` as "retry". The bundled proto
-  is regenerated from the backend and `Fail` always sends `retry` explicitly
-  (`true` by default, `false` for `NoRetry`). The contract test now checks
-  presence on the wire instead of `GetRetry()`, which could not tell the two
-  apart.
+  the SDK generated a plain proto3 `bool`, whose `false` is never put on the
+  wire: the server read every `NoRetry: true` as "retry". `Fail` now always
+  sends `retry` explicitly: `true` by default, and for `NoRetry` an explicit
+  `false` (field 4 = 0, carried as an unknown field so that
+  `pb.FailRequest.Retry` stays a `bool`). The contract tests decode the request
+  the way the backend declares it and check presence, not `GetRetry()`, which
+  could not tell the two apart.
 - `lease_id` is required on REST complete, fail and heartbeat (`422
   VALIDATION_ERROR` without it, since backend 0.1.121; it was a `409` before)
   and on gRPC `Complete`, `Fail` and `RenewLease` (`InvalidArgument`, since
@@ -68,6 +69,10 @@ package (see **Notes**).
 - gRPC: `Client.FailWithResponse` returns the server's `WillRetry` and
   `NextRetryDelaySecs`; `RegisterWorkerRequest.WorkerID` sends a stable worker
   id.
+- gRPC: `grpc.SetNoRetry(*pb.FailRequest)` for code that builds
+  `pb.FailRequest` itself, such as a `ProcessJobs` stream: it makes the failure
+  dead-letter the job. A plain `Retry: false` is not put on the wire, and the
+  server retries the job.
 - `spooled/types`: `LeaseID` on `ClaimedJob`, `CompleteJobRequest`,
   `FailJobRequest` and `HeartbeatJobRequest`; the new list filters,
   `JobHistoryEvent`, `InboundWebhookDelivery`, webhook `Format` and events.
@@ -96,10 +101,11 @@ package (see **Notes**).
   `proto/spooled.proto` (commit f84174e, sha256
   f2b5844b505e0f9c76a58ec281d98c4f062bf0f1f7c0cfdb5c834e6c64977bc3) with
   protoc 36.2 (libprotoc), protoc-gen-go v1.36.11 and protoc-gen-go-grpc v1.6.0.
-  `pb.FailRequest.Retry` is now `*bool` and `pb.RegisterWorkerRequest` gains
-  `WorkerId *string`. Code that builds `pb.FailRequest` itself (for example on a
-  `ProcessJobs` stream) must set `Retry: proto.Bool(false)` to dead-letter; the
-  high-level `grpc.Client` API is unchanged.
+  `pb.RegisterWorkerRequest` gains `WorkerId *string` and `GetWorkerId()`. One
+  line differs from the backend on purpose: `scripts/generate_grpc.sh` keeps
+  `FailRequest.retry` a plain `bool` (the backend's `optional bool` would turn
+  `pb.FailRequest.Retry` into a `*bool` and break code that sets or reads it),
+  and `TestProto_MatchesBackendProto` accepts only that difference.
 - The test fixture API key is now `sp_test_000000000000000000000000000000`, so
   secret scanners no longer flag the test files.
 

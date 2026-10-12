@@ -196,14 +196,14 @@ func TestEnqueueAndComplete_UnencodableValuesReturnErrors(t *testing.T) {
 // TestFail_RetriesByDefault is the SDKGP-17 regression test: proto3 sends
 // retry=false for an omitted field, and the server dead-letters on retry=false.
 //
-// It checks presence, not GetRetry(): with the plain `bool retry` this SDK used
-// to generate, GetRetry() is false both for "omitted" and for "false", so the
+// It checks presence, not GetRetry(): the SDK's pb.FailRequest has a plain
+// `bool retry`, so GetRetry() is false both for "omitted" and for "false". The
 // old assertion passed while NoRetry never reached the server (the backend's
-// `optional bool retry` read the missing field as "retry").
+// `optional bool retry` read the missing field as "retry"). The server here
+// decodes with the backend's declaration, so it sees what the backend sees.
 func TestFail_RetriesByDefault(t *testing.T) {
-	rec := &recordingQueueServer{}
-	addr := startPlaintextServer(t, rec)
-	client, err := NewClient(ClientOptions{Address: addr, APIKey: "sp_test_key", Timeout: time.Second})
+	srv := startBackendFailServer(t)
+	client, err := NewClient(ClientOptions{Address: srv.addr, APIKey: "sp_test_key", Timeout: time.Second})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -213,17 +213,18 @@ func TestFail_RetriesByDefault(t *testing.T) {
 	if err := client.Fail(ctx, &FailRequest{JobID: "j", WorkerID: "w", Error: "boom", LeaseID: "l"}); err != nil {
 		t.Fatalf("Fail: %v", err)
 	}
-	if rec.fail.Retry == nil || !*rec.fail.Retry {
-		t.Errorf("Fail without NoRetry sent retry=%v, want an explicit true", rec.fail.Retry)
+	if sent, retry := srv.lastRetry(); !sent || !retry {
+		t.Errorf("Fail without NoRetry: retry sent=%t value=%t, want an explicit true", sent, retry)
 	}
 
 	if err := client.Fail(ctx, &FailRequest{JobID: "j", WorkerID: "w", Error: "fatal", NoRetry: true, LeaseID: "l"}); err != nil {
 		t.Fatalf("Fail NoRetry: %v", err)
 	}
-	if rec.fail.Retry == nil {
+	sent, retry := srv.lastRetry()
+	if !sent {
 		t.Fatal("NoRetry left retry off the wire: the server reads a missing retry as \"retry\", so the job is not dead-lettered")
 	}
-	if *rec.fail.Retry {
+	if retry {
 		t.Error("NoRetry must send retry=false")
 	}
 }

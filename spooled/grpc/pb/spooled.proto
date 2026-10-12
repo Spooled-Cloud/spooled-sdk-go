@@ -149,7 +149,7 @@ message FailRequest {
     // Omitted: retry according to the job's max_retries (same as REST).
     // false: move to the dead-letter queue now. `optional` gives presence, so
     // clients that never set the field no longer dead-letter on first failure.
-    optional bool retry = 4;
+    bool retry = 4; // SDK copy: a plain bool, so false is not sent and means retry; grpc.SetNoRetry sends false.
     // Lease fencing token from the dequeued Job. When set, the failure
     // succeeds only if it matches the job's current lease.
     string lease_id = 5;

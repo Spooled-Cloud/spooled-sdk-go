@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -370,22 +371,74 @@ func (c *Client) FailWithResponse(ctx context.Context, req *FailRequest) (*FailR
 
 // newFailRequest builds the wire request for Fail.
 //
-// retry is a proto3 `optional bool`, so it is always sent explicitly. With the
-// plain `bool` this SDK used to generate, false was never put on the wire (a
-// proto3 scalar at its zero value is omitted), the server read "omitted" as
-// "retry", and NoRetry did not dead-letter. Sending true explicitly keeps the
-// default "retry" on older servers too, where an omitted field meant false.
+// The backend declares retry `optional bool` (omitted = retry per max_retries,
+// false = dead-letter now), while pb.FailRequest keeps a plain bool, whose
+// false proto3 never puts on the wire. So retry is always sent explicitly: true
+// as the plain field (which also keeps "retry" the default on older servers,
+// where an omitted field meant false), and false for NoRetry through
+// SetNoRetry. SDK 1.4.0 sent nothing for NoRetry, and the server retried the
+// job.
 func newFailRequest(req *FailRequest) *pb.FailRequest {
-	retry := !req.NoRetry
-	return &pb.FailRequest{
+	m := &pb.FailRequest{
 		JobId:    req.JobID,
 		WorkerId: req.WorkerID,
 		// The server rejects (REST) or has to trim (gRPC) an empty or over-long
 		// message; send one it accepts.
 		Error:   resources.CoerceFailureMessage(req.Error),
-		Retry:   &retry,
+		Retry:   !req.NoRetry,
 		LeaseId: req.LeaseID,
 	}
+	if req.NoRetry {
+		SetNoRetry(m)
+	}
+	return m
+}
+
+// failRequestRetryField is the field number of FailRequest.retry.
+const failRequestRetryField protowire.Number = 4
+
+// SetNoRetry makes a pb.FailRequest dead-letter the job instead of retrying
+// it, and returns req. Use it when you build a pb.FailRequest yourself, for
+// example to settle a job on a ProcessJobs stream; Client.Fail does the same
+// for FailRequest.NoRetry.
+//
+// The backend declares FailRequest.retry `optional bool`: omitted means retry
+// according to the job's max_retries, false means dead-letter now. The SDK's
+// pb.FailRequest keeps Retry a plain bool so code written against earlier
+// releases still compiles, and proto3 never puts a plain false on the wire:
+// `Retry: false` alone reaches the server as "omitted", and the job is
+// retried. SetNoRetry sets Retry to false and adds retry=false (field 4,
+// varint 0) to the message's unknown fields, which are marshaled as they are.
+// The server reads that as an explicit false, older servers as a plain false.
+// Calling it twice changes nothing. A nil req is returned as is.
+func SetNoRetry(req *pb.FailRequest) *pb.FailRequest {
+	if req == nil {
+		return nil
+	}
+	req.Retry = false
+	m := req.ProtoReflect()
+	// Keep any other unknown fields; drop an earlier retry so it is sent once.
+	var unknown []byte
+	for b := m.GetUnknown(); len(b) > 0; {
+		num, typ, n := protowire.ConsumeTag(b)
+		if n < 0 {
+			unknown = append(unknown, b...)
+			break
+		}
+		size := protowire.ConsumeFieldValue(num, typ, b[n:])
+		if size < 0 {
+			unknown = append(unknown, b...)
+			break
+		}
+		if num != failRequestRetryField {
+			unknown = append(unknown, b[:n+size]...)
+		}
+		b = b[n+size:]
+	}
+	unknown = protowire.AppendTag(unknown, failRequestRetryField, protowire.VarintType)
+	unknown = protowire.AppendVarint(unknown, 0)
+	m.SetUnknown(unknown)
+	return req
 }
 
 // RenewLeaseRequest is the request to renew a job lease.
@@ -491,6 +544,11 @@ func (c *Client) StreamJobs(ctx context.Context, queueName, workerID string) (pb
 }
 
 // ProcessJobs opens a bidirectional stream for job processing.
+//
+// Settlements on the stream are pb messages you build yourself. Each needs the
+// dequeued job's LeaseId. To fail a job without a retry, pass its
+// pb.FailRequest through SetNoRetry: a plain `Retry: false` is not put on the
+// wire, and the server retries the job.
 func (c *Client) ProcessJobs(ctx context.Context) (pb.QueueService_ProcessJobsClient, error) {
 	ctx = c.withAuth(ctx)
 	return c.queueClient.ProcessJobs(ctx)

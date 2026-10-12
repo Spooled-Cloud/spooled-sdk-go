@@ -45,7 +45,7 @@ Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if c
 | SDKGP-16 | P2 | ~~Payload/result integers above 2^53 corrupted on decode~~ **FIXED (1.4.0)** | `spooled/resources/numbers.go` (json.Number for those) |
 | SDKGP-17 | P2 | ~~gRPC `Fail` without `Retry` dead-lettered immediately~~ **FIXED (1.4.0)** | `spooled/grpc/client.go FailRequest.NoRetry` |
 | SDKGP-18 | P2 | ~~SSE put the API key in `?api_key=`~~ **FIXED (1.4.0)** | `spooled/realtime/sse.go` |
-| SDKGW9-01 | P2 | ~~gRPC `NoRetry: true` did not dead-letter: SDK proto had plain `bool retry`, backend `optional bool`~~ **FIXED (1.5.0)** | `spooled/grpc/pb/spooled.proto`, `spooled/grpc/client.go newFailRequest` |
+| SDKGW9-01 | P2 | ~~gRPC `NoRetry: true` did not dead-letter: SDK proto had plain `bool retry`, backend `optional bool`~~ **FIXED (1.5.0)**: explicit false as unknown field 4 = 0 (`grpc.SetNoRetry`); `pb.FailRequest.Retry` stays a `bool` | `spooled/grpc/client.go newFailRequest`, `scripts/generate_grpc.sh` |
 | SDKGW9-02 | P2 | ~~`LeaseID` documented optional; API requires it (REST 422, gRPC InvalidArgument); `examples/grpc` omitted it~~ **FIXED (1.5.0)** docs + example | `spooled/resources/jobs.go`, `spooled/grpc/client.go`, `examples/grpc` |
 | SDKGW9-03 | P2 | ~~`Workflows().Jobs()` `Key` always empty (API sends none)~~ **FIXED (1.5.0)**: `omitempty`, `CreateWorkflowResponse.ApplyKeys` / `KeyByJobID` | `spooled/resources/workflows.go` |
 | SDKGW9-04 | P3 | ~~README used symbols that do not exist and said no X-RateLimit headers~~ **FIXED (1.5.0)**; all README Go blocks compile | `README.md` |
