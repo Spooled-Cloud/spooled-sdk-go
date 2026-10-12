@@ -274,7 +274,8 @@ jobs, err := client.Jobs().List(ctx, &resources.ListJobsParams{
     Limit:     ptr(10),
 })
 
-// Cancel a job
+// Cancel a job (DELETE /jobs/{id}): only pending or scheduled jobs can be cancelled;
+// a job a worker is already processing is not interrupted
 err = client.Jobs().Cancel(ctx, jobID)
 ```
 
@@ -522,6 +523,7 @@ jobs, err := client.Dequeue(ctx, &grpc.DequeueRequest{
     QueueName: "high-throughput",
     WorkerID:  "worker-1",
     BatchSize: 10,
+    LeaseDurationSec: 300, // 5-3600; 0 = the server default (300 s on Spooled Cloud)
 })
 
 // Echo each dequeued job's LeaseID on settlement so stale executions are fenced.
@@ -542,6 +544,14 @@ for {
     // Process job...
 }
 ```
+
+`StreamJobs` delivers **one job at a time per stream**: the server sends the next job only after the
+previous one on that stream is completed, failed or released (or its lease ran out), so settle every
+job and open one stream per job slot to run jobs in parallel (at most 100 open streams per
+organization). `StreamJobs` cannot send a lease length, so its jobs get the server default (300 s on
+Spooled Cloud). A job that can run longer than its lease must be renewed before it expires with
+`client.RenewLease(ctx, &grpc.RenewLeaseRequest{JobID: ..., WorkerID: ..., LeaseID: job.LeaseID, ExtensionSecs: 300})`
+(or fetched with `Dequeue` and a longer `LeaseDurationSec`, at most 3600).
 
 ### Webhooks
 
@@ -664,13 +674,15 @@ if err != nil {
     case *spooled.AuthenticationError:
         fmt.Printf("Invalid API key: %s\n", e.Message)
     case *spooled.RateLimitError:
-        // 429 covers both per-second rate limiting and plan-quota errors.
+        // 429 covers both request-rate limiting and plan-quota errors. The API sends only a
+        // Retry-After header (no X-RateLimit-* headers), so use e.RetryAfter; Limit,
+        // Remaining and Reset stay zero.
         // A plan quota (spooled.IsQuotaExceeded) is never retried by the SDK and
         // never trips the circuit breaker; its details are in e.Quota.
         if e.IsQuotaExceeded() {
             fmt.Printf("Plan quota exceeded: %s (%d/%d on the %s plan)\n", e.Message, e.Quota.Current, e.Quota.Limit, e.Quota.Plan)
         } else {
-            fmt.Printf("Rate limited. Retry after: %v\n", e.Reset)
+            fmt.Printf("Rate limited. Retry after: %v\n", e.RetryAfter)
         }
     case *spooled.ValidationError:
         fmt.Printf("Invalid request: %v\n", e.Errors)
