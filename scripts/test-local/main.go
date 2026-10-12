@@ -870,7 +870,7 @@ func testJobLifecycle(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "test-worker",
 		})
-		claim(ctx, client, &resources.ClaimJobsRequest{
+		_, _ = claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
@@ -898,7 +898,7 @@ func testJobLifecycle(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "test-worker",
 		})
-		claim(ctx, client, &resources.ClaimJobsRequest{
+		_, _ = claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
@@ -925,7 +925,7 @@ func testJobLifecycle(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "test-worker",
 		})
-		claim(ctx, client, &resources.ClaimJobsRequest{
+		_, _ = claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
@@ -964,7 +964,7 @@ func testJobFailureAndRetry(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "retry-worker",
 		})
-		claim(ctx, client, &resources.ClaimJobsRequest{
+		_, _ = claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
@@ -996,7 +996,7 @@ func testJobFailureAndRetry(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "exhaust-worker",
 		})
-		claim(ctx, client, &resources.ClaimJobsRequest{
+		_, _ = claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
@@ -1024,7 +1024,7 @@ func testJobFailureAndRetry(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "manual-worker",
 		})
-		claim(ctx, client, &resources.ClaimJobsRequest{
+		_, _ = claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
@@ -1802,7 +1802,7 @@ func testGRPC(client *spooled.Client) {
 			QueueName: queueName,
 			Payload:   map[string]any{"complete": "test"},
 		})
-		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
+		_, _ = dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: queueName,
 			WorkerID:  workerID,
 			BatchSize: 1,
@@ -1901,7 +1901,7 @@ func testGRPC(client *spooled.Client) {
 		jobID := enqResult.JobID
 
 		// Dequeue
-		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
+		_, _ = dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: failQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
@@ -2044,7 +2044,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 			Payload:   map[string]any{"test": "renew"},
 		})
 
-		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
+		_, _ = dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName:        renewQueue,
 			WorkerID:         wID,
 			BatchSize:        1,
@@ -2081,7 +2081,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 			Payload:   map[string]any{"test": "renew-fail"},
 		})
 
-		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
+		_, _ = dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: renewFailQueue,
 			WorkerID:  reg1.WorkerID,
 			BatchSize: 1,
@@ -2116,7 +2116,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 			MaxRetries: ptr(int32(0)),
 		})
 
-		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
+		_, _ = dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: failDLQQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
@@ -2155,7 +2155,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 			MaxRetries: ptr(int32(0)),
 		})
 
-		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
+		_, _ = dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: failLongQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
@@ -2406,7 +2406,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 			Payload:   map[string]any{"test": "result"},
 		})
 
-		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
+		_, _ = dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: resultQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
@@ -2746,7 +2746,7 @@ func testWebhookDelivery(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "webhook-worker",
 		})
-		claim(ctx, client, &resources.ClaimJobsRequest{
+		_, _ = claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
@@ -2776,7 +2776,7 @@ func testWebhookDelivery(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "webhook-fail-worker",
 		})
-		claim(ctx, client, &resources.ClaimJobsRequest{
+		_, _ = claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
