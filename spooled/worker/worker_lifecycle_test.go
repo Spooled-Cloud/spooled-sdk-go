@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -810,5 +811,54 @@ func TestWorker_StopIsIdempotentAndSafeBeforeStart(t *testing.T) {
 	wg.Wait()
 	if len(api.to("/deregister")) != 1 {
 		t.Errorf("deregister calls = %d, want exactly 1", len(api.to("/deregister")))
+	}
+}
+
+// TestWorker_StopDoesNotLogCanceledHeartbeat: a worker heartbeat that is in
+// flight when Stop ends the heartbeat loop is aborted on purpose. It used to be
+// logged as "Failed to send worker heartbeat: context canceled" on every
+// graceful shutdown (examples/worker showed it).
+func TestWorker_StopDoesNotLogCanceledHeartbeat(t *testing.T) {
+	api := newFakeAPI(t, `{"jobs":[]}`)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) }) // runs before the server closes
+	api.respond = func(path string, _ int, _ http.ResponseWriter) bool {
+		if strings.HasSuffix(path, "/workers/w-test/heartbeat") {
+			<-release // hold the heartbeat until the worker gives up on it
+			return true
+		}
+		return false
+	}
+
+	var mu sync.Mutex
+	var logs []string
+	w := api.newWorker(Options{
+		LeaseDuration:     1, // heartbeat every second (the minimum)
+		HeartbeatFraction: 0.5,
+		Logger: func(msg string, args ...any) {
+			mu.Lock()
+			defer mu.Unlock()
+			logs = append(logs, fmt.Sprintf(msg, args...))
+		},
+	}, httpx.RetryConfig{MaxRetries: 2, BaseDelay: 10 * time.Millisecond, MaxDelay: 20 * time.Millisecond})
+	w.Process(func(*JobContext) (map[string]any, error) { return nil, nil })
+	if err := w.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitFor(t, "a worker heartbeat in flight", func() bool { return len(api.to("/workers/w-test/heartbeat")) > 0 })
+
+	if err := w.Stop(); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, line := range logs {
+		if strings.Contains(line, "Failed to send worker heartbeat") {
+			t.Errorf("graceful shutdown logged %q", line)
+		}
+	}
+	if len(api.to("/deregister")) != 1 {
+		t.Errorf("deregister calls = %d, want 1", len(api.to("/deregister")))
 	}
 }

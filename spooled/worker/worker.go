@@ -942,6 +942,11 @@ func (w *Worker) workerHeartbeatLoop() {
 		case <-ctx.Done():
 			return
 		case <-w.heartbeatTicker.C:
+			// select picks at random when the tick and the shutdown arrive
+			// together; do not start a heartbeat that is already canceled.
+			if ctx.Err() != nil {
+				return
+			}
 			w.sendWorkerHeartbeat()
 		}
 	}
@@ -977,6 +982,12 @@ func (w *Worker) sendWorkerHeartbeat() {
 		CurrentJobs: currentJobs,
 		Status:      &status,
 	}); err != nil {
+		// Shutdown cancels the heartbeat context once the jobs have drained,
+		// which aborts a heartbeat in flight. That is the intended end of the
+		// heartbeat loop, not a failure worth reporting.
+		if w.heartbeatContext().Err() != nil || errors.Is(err, context.Canceled) {
+			return
+		}
 		w.log("Failed to send worker heartbeat: %v", err)
 	} else {
 		w.emit(Event{
