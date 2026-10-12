@@ -195,6 +195,11 @@ func TestEnqueueAndComplete_UnencodableValuesReturnErrors(t *testing.T) {
 
 // TestFail_RetriesByDefault is the SDKGP-17 regression test: proto3 sends
 // retry=false for an omitted field, and the server dead-letters on retry=false.
+//
+// It checks presence, not GetRetry(): with the plain `bool retry` this SDK used
+// to generate, GetRetry() is false both for "omitted" and for "false", so the
+// old assertion passed while NoRetry never reached the server (the backend's
+// `optional bool retry` read the missing field as "retry").
 func TestFail_RetriesByDefault(t *testing.T) {
 	rec := &recordingQueueServer{}
 	addr := startPlaintextServer(t, rec)
@@ -205,17 +210,20 @@ func TestFail_RetriesByDefault(t *testing.T) {
 	defer client.Close()
 	ctx := context.Background()
 
-	if err := client.Fail(ctx, &FailRequest{JobID: "j", WorkerID: "w", Error: "boom"}); err != nil {
+	if err := client.Fail(ctx, &FailRequest{JobID: "j", WorkerID: "w", Error: "boom", LeaseID: "l"}); err != nil {
 		t.Fatalf("Fail: %v", err)
 	}
-	if !rec.fail.GetRetry() {
-		t.Error("Fail without Retry sent retry=false: the job would be dead-lettered on its first failure")
+	if rec.fail.Retry == nil || !*rec.fail.Retry {
+		t.Errorf("Fail without NoRetry sent retry=%v, want an explicit true", rec.fail.Retry)
 	}
 
-	if err := client.Fail(ctx, &FailRequest{JobID: "j", WorkerID: "w", Error: "fatal", NoRetry: true}); err != nil {
+	if err := client.Fail(ctx, &FailRequest{JobID: "j", WorkerID: "w", Error: "fatal", NoRetry: true, LeaseID: "l"}); err != nil {
 		t.Fatalf("Fail NoRetry: %v", err)
 	}
-	if rec.fail.GetRetry() {
+	if rec.fail.Retry == nil {
+		t.Fatal("NoRetry left retry off the wire: the server reads a missing retry as \"retry\", so the job is not dead-lettered")
+	}
+	if *rec.fail.Retry {
 		t.Error("NoRetry must send retry=false")
 	}
 }

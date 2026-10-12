@@ -152,6 +152,12 @@ func (c *Client) withAuth(ctx context.Context) context.Context {
 //
 // Explicit zero retries cannot be expressed over gRPC proto3 int32 (same as
 // REST omit vs 0 distinction on the server).
+//
+// Payload travels as a google.protobuf.Struct, so it is always a JSON object,
+// and Struct numbers are doubles: an integer of 2^53 or more (a Discord or
+// Snowflake ID, for example) arrives rounded. A job that a REST client created
+// with a non-object payload (an array, string or number) is delivered over gRPC
+// with an empty payload. Use the REST API for those payloads.
 type EnqueueRequest struct {
 	QueueName      string
 	Payload        map[string]any
@@ -224,6 +230,10 @@ type DequeueRequest struct {
 }
 
 // Job represents a dequeued job.
+//
+// Payload comes from a google.protobuf.Struct: a job created over REST with a
+// non-object payload (array, string, number) arrives empty here, and integers
+// of 2^53 or more arrive rounded. Read such jobs over REST.
 type Job struct {
 	ID             string
 	QueueName      string
@@ -234,9 +244,10 @@ type Job struct {
 	TimeoutSeconds int32
 	LeaseExpiresAt *time.Time
 	// LeaseID is the lease fencing token issued by the server for this
-	// dequeue. Echo it back on Complete/Fail/RenewLease so the operation
-	// applies only to the lease this worker actually holds (empty = legacy
-	// worker_id fence).
+	// dequeue. Echo it back on Complete, Fail and RenewLease: the server
+	// requires it there (a settlement without it fails with InvalidArgument
+	// "lease_id is required for job settlement") and applies the call only to
+	// the lease this worker actually holds.
 	LeaseID string
 }
 
@@ -274,8 +285,10 @@ type CompleteRequest struct {
 	JobID    string
 	WorkerID string
 	Result   map[string]any
-	// LeaseID is the lease fencing token from the dequeued Job. When set, the
-	// completion succeeds only if it matches the job's current lease.
+	// LeaseID is the lease fencing token from the dequeued Job (Job.LeaseID).
+	// It is required: the server answers a Complete without it with
+	// InvalidArgument, and one that does not match the job's current lease is
+	// rejected.
 	LeaseID string
 }
 
@@ -313,28 +326,66 @@ type FailRequest struct {
 	Retry bool
 	// NoRetry dead-letters the job immediately instead of scheduling a retry.
 	NoRetry bool
-	// LeaseID is the lease fencing token from the dequeued Job. When set, the
-	// failure succeeds only if it matches the job's current lease.
+	// LeaseID is the lease fencing token from the dequeued Job (Job.LeaseID).
+	// It is required: the server answers a Fail without it with
+	// InvalidArgument, and one that does not match the job's current lease is
+	// rejected.
 	LeaseID string
+}
+
+// FailResponse is what the server decided for a failed job.
+type FailResponse struct {
+	Success bool
+	// WillRetry is true when the job went back to pending for another attempt,
+	// false when it was dead-lettered (NoRetry, or max_retries used up).
+	WillRetry bool
+	// NextRetryDelaySecs is the backoff before the retry; 0 when the job was
+	// dead-lettered.
+	NextRetryDelaySecs int32
 }
 
 // Fail marks a job as failed. Unless req.NoRetry is set the job is retried with
 // backoff until max_retries is used up, like a failure reported over REST.
+// FailWithResponse also returns whether the job will be retried.
 func (c *Client) Fail(ctx context.Context, req *FailRequest) error {
+	_, err := c.FailWithResponse(ctx, req)
+	return err
+}
+
+// FailWithResponse marks a job as failed like Fail and returns the server's
+// decision: whether the job will be retried and after what delay.
+func (c *Client) FailWithResponse(ctx context.Context, req *FailRequest) (*FailResponse, error) {
 	ctx = c.withAuth(ctx)
 
-	pbReq := &pb.FailRequest{
+	resp, err := c.queueClient.Fail(ctx, newFailRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return &FailResponse{
+		Success:            resp.GetSuccess(),
+		WillRetry:          resp.GetWillRetry(),
+		NextRetryDelaySecs: resp.GetNextRetryDelaySecs(),
+	}, nil
+}
+
+// newFailRequest builds the wire request for Fail.
+//
+// retry is a proto3 `optional bool`, so it is always sent explicitly. With the
+// plain `bool` this SDK used to generate, false was never put on the wire (a
+// proto3 scalar at its zero value is omitted), the server read "omitted" as
+// "retry", and NoRetry did not dead-letter. Sending true explicitly keeps the
+// default "retry" on older servers too, where an omitted field meant false.
+func newFailRequest(req *FailRequest) *pb.FailRequest {
+	retry := !req.NoRetry
+	return &pb.FailRequest{
 		JobId:    req.JobID,
 		WorkerId: req.WorkerID,
 		// The server rejects (REST) or has to trim (gRPC) an empty or over-long
 		// message; send one it accepts.
 		Error:   resources.CoerceFailureMessage(req.Error),
-		Retry:   !req.NoRetry,
+		Retry:   &retry,
 		LeaseId: req.LeaseID,
 	}
-
-	_, err := c.queueClient.Fail(ctx, pbReq)
-	return err
 }
 
 // RenewLeaseRequest is the request to renew a job lease.
@@ -342,8 +393,10 @@ type RenewLeaseRequest struct {
 	JobID         string
 	WorkerID      string
 	ExtensionSecs int32
-	// LeaseID is the lease fencing token from the dequeued Job. When set, the
-	// renewal succeeds only if it matches the job's current lease.
+	// LeaseID is the lease fencing token from the dequeued Job (Job.LeaseID).
+	// It is required: the server answers a RenewLease without it with
+	// InvalidArgument, and one that does not match the job's current lease is
+	// rejected.
 	LeaseID string
 }
 
@@ -452,6 +505,12 @@ type RegisterWorkerRequest struct {
 	MaxConcurrency int32
 	Version        string
 	Metadata       map[string]string
+	// WorkerID is an optional stable worker id: 1-128 characters from
+	// [A-Za-z0-9._-]. Send the same id after a restart and the server updates
+	// that worker instead of adding one, so a restarting worker does not count
+	// twice against the plan's worker limit. Empty: the server assigns a new
+	// id. An id another organization already uses fails with AlreadyExists.
+	WorkerID string
 }
 
 // RegisterWorkerResponse is the response from registering a worker.
@@ -471,6 +530,10 @@ func (c *Client) RegisterWorker(ctx context.Context, req *RegisterWorkerRequest)
 		MaxConcurrency: req.MaxConcurrency,
 		Version:        req.Version,
 		Metadata:       req.Metadata,
+	}
+	if req.WorkerID != "" {
+		workerID := req.WorkerID
+		pbReq.WorkerId = &workerID
 	}
 
 	resp, err := c.workerClient.Register(ctx, pbReq)
