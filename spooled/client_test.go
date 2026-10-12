@@ -8,7 +8,7 @@ import (
 
 func TestNewClient_WithAPIKey(t *testing.T) {
 	client, err := NewClient(
-		WithAPIKey("sp_test_123456789012345678901234567890"),
+		WithAPIKey("sp_test_000000000000000000000000000000"),
 	)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -16,7 +16,7 @@ func TestNewClient_WithAPIKey(t *testing.T) {
 	defer client.Close()
 
 	cfg := client.GetConfig()
-	if cfg.APIKey != "sp_test_123456789012345678901234567890" {
+	if cfg.APIKey != "sp_test_000000000000000000000000000000" {
 		t.Errorf("Expected API key to be set")
 	}
 }
@@ -97,7 +97,7 @@ func TestNewClient_AllOptions(t *testing.T) {
 
 func TestNewClient_WSURLDerived(t *testing.T) {
 	client, err := NewClient(
-		WithAPIKey("sp_test_123456789012345678901234567890"),
+		WithAPIKey("sp_test_000000000000000000000000000000"),
 		WithBaseURL("https://custom.example.com"),
 	)
 	if err != nil {
@@ -113,7 +113,7 @@ func TestNewClient_WSURLDerived(t *testing.T) {
 
 func TestClientRealtimeReturnsWebSocketClient(t *testing.T) {
 	client, err := NewClient(
-		WithAPIKey("sp_test_123456789012345678901234567890"),
+		WithAPIKey("sp_test_000000000000000000000000000000"),
 	)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -131,7 +131,7 @@ func TestClientRealtimeReturnsWebSocketClient(t *testing.T) {
 
 func TestClientRealtimeSSEReturnsSSEClient(t *testing.T) {
 	client, err := NewClient(
-		WithAPIKey("sp_test_123456789012345678901234567890"),
+		WithAPIKey("sp_test_000000000000000000000000000000"),
 	)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -145,7 +145,7 @@ func TestClientRealtimeSSEReturnsSSEClient(t *testing.T) {
 
 func TestClientRealtimeOptionsPreferAccessToken(t *testing.T) {
 	client, err := NewClient(
-		WithAPIKey("sp_test_123456789012345678901234567890"),
+		WithAPIKey("sp_test_000000000000000000000000000000"),
 		WithAccessToken("jwt-access-token"),
 	)
 	if err != nil {
@@ -164,7 +164,7 @@ func TestClientRealtimeOptionsPreferAccessToken(t *testing.T) {
 
 func TestClientRealtimeOptionsUseAPIKeyWhenNoAccessToken(t *testing.T) {
 	client, err := NewClient(
-		WithAPIKey("sp_test_123456789012345678901234567890"),
+		WithAPIKey("sp_test_000000000000000000000000000000"),
 	)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -175,7 +175,7 @@ func TestClientRealtimeOptionsUseAPIKeyWhenNoAccessToken(t *testing.T) {
 	if opts.Token != "" {
 		t.Errorf("Token = %q, want empty", opts.Token)
 	}
-	if opts.APIKey != "sp_test_123456789012345678901234567890" {
+	if opts.APIKey != "sp_test_000000000000000000000000000000" {
 		t.Errorf("APIKey = %q, want configured API key", opts.APIKey)
 	}
 }
@@ -224,7 +224,7 @@ func TestNormalizeRealtimeWSURL(t *testing.T) {
 
 func TestNewClient_ResourcesInitialized(t *testing.T) {
 	client, err := NewClient(
-		WithAPIKey("sp_test_123456789012345678901234567890"),
+		WithAPIKey("sp_test_000000000000000000000000000000"),
 	)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -286,7 +286,7 @@ func TestValidateAPIKey(t *testing.T) {
 	}{
 		// New prefix keys (sp_)
 		{"sp_live_123456789012345678901234567890", false},
-		{"sp_test_123456789012345678901234567890", false},
+		{"sp_test_000000000000000000000000000000", false},
 		// Legacy prefix keys (sk_) - use clearly fake values to avoid GitHub detection
 		{"sk_live_FAKE_TEST_KEY_12345678901234", false},
 		{"sk_test_FAKE_TEST_KEY_12345678901234", false},

@@ -13,7 +13,7 @@ import (
 // package rejects `Authorization: Bearer <key>\n` with an opaque error
 // that users routinely mis-diagnose as an auth failure.
 func TestResolveConfig_TrimsCredentials(t *testing.T) {
-	const validKey = "sp_test_123456789012345678901234567890"
+	const validKey = "sp_test_000000000000000000000000000000"
 
 	tests := []struct {
 		name  string
@@ -68,7 +68,7 @@ func TestResolveConfig_TrimsCredentials(t *testing.T) {
 // TestValidateAPIKey_TrimsBeforeChecking asserts that ValidateAPIKey normalizes
 // whitespace before running its prefix/length rules, matching resolveConfig.
 func TestValidateAPIKey_TrimsBeforeChecking(t *testing.T) {
-	const validKey = "sp_test_123456789012345678901234567890"
+	const validKey = "sp_test_000000000000000000000000000000"
 
 	if err := ValidateAPIKey(validKey + "\n"); err != nil {
 		t.Errorf("expected trailing newline to be tolerated, got %v", err)

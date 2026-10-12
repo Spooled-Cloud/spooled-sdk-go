@@ -20,7 +20,7 @@ import (
 	"github.com/spooled-cloud/spooled-sdk-go/spooled/resources"
 )
 
-const testAPIKey = "sp_test_123456789012345678901234567890"
+const testAPIKey = "sp_test_000000000000000000000000000000"
 
 // --- SDKGP-09: Start after a failed registration ----------------------------
 

@@ -115,7 +115,7 @@ func TestTransport_QuotaExceeded_NotRetriedAndDoesNotTripBreaker(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL:        server.URL,
-		APIKey:         "sp_test_123456789012345678901234567890",
+		APIKey:         "sp_test_000000000000000000000000000000",
 		Retry:          RetryConfig{MaxRetries: 3, BaseDelay: time.Hour, MaxDelay: time.Hour, Factor: 2},
 		CircuitBreaker: CircuitBreakerConfig{Enabled: true, FailureThreshold: 2, SuccessThreshold: 1, Timeout: time.Minute},
 	})
@@ -156,7 +156,7 @@ func TestTransport_SkipCircuitBreaker_SendsWhileOpen(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL:        server.URL,
-		APIKey:         "sp_test_123456789012345678901234567890",
+		APIKey:         "sp_test_000000000000000000000000000000",
 		Retry:          fastRetry(0),
 		CircuitBreaker: CircuitBreakerConfig{Enabled: true, FailureThreshold: 1, SuccessThreshold: 1, Timeout: time.Minute},
 	})
@@ -195,7 +195,7 @@ func TestTransport_CallerCancellationDoesNotTripBreaker(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL:        server.URL,
-		APIKey:         "sp_test_123456789012345678901234567890",
+		APIKey:         "sp_test_000000000000000000000000000000",
 		Retry:          fastRetry(0),
 		CircuitBreaker: CircuitBreakerConfig{Enabled: true, FailureThreshold: 1, SuccessThreshold: 1, Timeout: time.Minute},
 	})
@@ -240,7 +240,7 @@ func TestTransport_IdempotentPOSTRetriesTransientFailures(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewTransport(Config{BaseURL: server.URL, APIKey: "sp_test_123456789012345678901234567890", Retry: fastRetry(3)})
+	transport := NewTransport(Config{BaseURL: server.URL, APIKey: "sp_test_000000000000000000000000000000", Retry: fastRetry(3)})
 	if _, err := transport.Do(context.Background(), &Request{Method: http.MethodPost, Path: "/ack", Idempotent: true}); err != nil {
 		t.Fatalf("idempotent POST should survive 503, 408 and a dropped connection: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestTransport_IdempotentPOSTDoesNotRetry4xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	transport := NewTransport(Config{BaseURL: server.URL, APIKey: "sp_test_123456789012345678901234567890", Retry: fastRetry(3)})
+	transport := NewTransport(Config{BaseURL: server.URL, APIKey: "sp_test_000000000000000000000000000000", Retry: fastRetry(3)})
 	if _, err := transport.Do(context.Background(), &Request{Method: http.MethodPost, Path: "/ack", Idempotent: true}); err == nil {
 		t.Fatal("expected the 409 to surface")
 	}

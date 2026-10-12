@@ -22,7 +22,7 @@ func TestTransport_Do_Success(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 	})
 
 	resp, err := transport.Do(context.Background(), &Request{
@@ -54,7 +54,7 @@ func TestTransport_Do_WithBody(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 	})
 
 	_, err := transport.Do(context.Background(), &Request{
@@ -86,10 +86,10 @@ func TestTransport_Do_AuthHeaders(t *testing.T) {
 		{
 			name: "API key header",
 			config: Config{
-				APIKey: "sp_test_123456789012345678901234567890",
+				APIKey: "sp_test_000000000000000000000000000000",
 			},
 			expectKey:   "Authorization",
-			expectValue: "Bearer sp_test_123456789012345678901234567890",
+			expectValue: "Bearer sp_test_000000000000000000000000000000",
 		},
 		{
 			name: "Access token header",
@@ -102,7 +102,7 @@ func TestTransport_Do_AuthHeaders(t *testing.T) {
 		{
 			name: "Admin key header",
 			config: Config{
-				APIKey:   "sp_test_123456789012345678901234567890",
+				APIKey:   "sp_test_000000000000000000000000000000",
 				AdminKey: "admin-key-here",
 			},
 			useAdminKey: true,
@@ -112,7 +112,7 @@ func TestTransport_Do_AuthHeaders(t *testing.T) {
 		{
 			name: "Access token takes precedence over API key",
 			config: Config{
-				APIKey:      "sp_test_123456789012345678901234567890",
+				APIKey:      "sp_test_000000000000000000000000000000",
 				AccessToken: "jwt-token-here",
 			},
 			expectKey:   "Authorization",
@@ -160,7 +160,7 @@ func TestTransport_Do_CustomHeaders(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Headers: map[string]string{
 			"X-Custom-Header": "custom-value",
 		},
@@ -197,7 +197,7 @@ func TestTransport_Do_UserAgent(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 	})
 
 	transport.Do(context.Background(), &Request{
@@ -220,7 +220,7 @@ func TestTransport_Do_QueryParams(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 	})
 
 	_, err := transport.Do(context.Background(), &Request{
@@ -257,7 +257,7 @@ func TestTransport_Do_ErrorResponse(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 	})
 
 	_, err := transport.Do(context.Background(), &Request{
@@ -288,7 +288,7 @@ func TestTransport_Do_Retry(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Retry: RetryConfig{
 			MaxRetries: 3,
 			BaseDelay:  1 * time.Millisecond,
@@ -320,7 +320,7 @@ func TestTransport_Do_NoRetryForPOST(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Retry: RetryConfig{
 			MaxRetries: 3,
 			BaseDelay:  1 * time.Millisecond,
@@ -358,7 +358,7 @@ func TestTransport_Do_RetryIdempotentPOST(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Retry: RetryConfig{
 			MaxRetries: 3,
 			BaseDelay:  1 * time.Millisecond,
@@ -392,7 +392,7 @@ func TestTransport_Do_CircuitBreaker(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Retry: RetryConfig{
 			MaxRetries: 0,                    // No retries to speed up test
 			BaseDelay:  1 * time.Millisecond, // Must set to indicate config is provided
@@ -437,7 +437,7 @@ func TestTransport_Do_ContextCancellation(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Timeout: 5 * time.Second,
 	})
 
@@ -464,12 +464,12 @@ func TestTransport_SetAccessToken(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 	})
 
 	// Initially uses API key (via Bearer token)
 	transport.Do(context.Background(), &Request{Method: http.MethodGet, Path: "/test"})
-	if receivedAuth != "Bearer sp_test_123456789012345678901234567890" {
+	if receivedAuth != "Bearer sp_test_000000000000000000000000000000" {
 		t.Errorf("Expected API key as Bearer token, got %q", receivedAuth)
 	}
 
@@ -492,7 +492,7 @@ func TestTransport_CircuitBreaker_IgnoresClientErrors(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Retry: RetryConfig{
 			MaxRetries: 0,
 			BaseDelay:  1 * time.Millisecond,
@@ -531,7 +531,7 @@ func TestTransport_CircuitBreaker_RecordsOncePerDo(t *testing.T) {
 
 	transport := NewTransport(Config{
 		BaseURL: server.URL,
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Retry: RetryConfig{
 			MaxRetries: 3, // A single Do() will retry several times.
 			BaseDelay:  1 * time.Millisecond,
@@ -565,7 +565,7 @@ func TestTransport_CircuitBreaker_RecordsOncePerDo(t *testing.T) {
 func TestTransport_NextRetryDelay_HonorsRetryAfter(t *testing.T) {
 	transport := NewTransport(Config{
 		BaseURL: "http://example.invalid",
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Retry: RetryConfig{
 			MaxRetries: 3,
 			BaseDelay:  1 * time.Millisecond,
@@ -600,7 +600,7 @@ func TestNewTransport_PreservesMaxRetries(t *testing.T) {
 	// preserved rather than reset to the default of 3.
 	transport := NewTransport(Config{
 		BaseURL: "http://example.invalid",
-		APIKey:  "sp_test_123456789012345678901234567890",
+		APIKey:  "sp_test_000000000000000000000000000000",
 		Retry:   RetryConfig{MaxRetries: 5},
 	})
 
