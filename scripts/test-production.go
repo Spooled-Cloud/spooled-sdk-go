@@ -3,6 +3,11 @@
 // Safe defaults:
 // - Uses Spooled Cloud endpoints
 // - Skips stress/load tests unless --full is provided (to avoid noisy prod runs)
+// - Skips steps that create an organization or a billing portal session
+//   (set RUN_UNSAFE_TESTS=1 to run them)
+//
+// Use an API key of a dedicated test organization: the suite creates and
+// deletes queues, jobs, workers, schedules, workflows, webhooks and API keys.
 //
 // Usage:
 //   API_KEY=sp_live_... go run scripts/test-production.go
@@ -16,6 +21,7 @@
 //   GRPC_ADDRESS=grpc.spooled.cloud:443
 //   SKIP_GRPC=0|1
 //   SKIP_STRESS=0|1
+//   RUN_UNSAFE_TESTS=0|1
 
 package main
 
@@ -23,7 +29,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
+	"path/filepath"
 )
 
 func main() {
@@ -79,9 +85,10 @@ func main() {
 	cmd.Stderr = os.Stderr
 	cmd.Env = env
 
-	// Change to parent directory if we're in scripts
-	if strings.HasSuffix(os.Getenv("PWD"), "/scripts") {
-		cmd.Dir = ".."
+	// Change to the module root if we're in scripts. os.Getwd, not $PWD: the
+	// latter is unset (or uses backslashes) on Windows.
+	if wd, err := os.Getwd(); err == nil && filepath.Base(wd) == "scripts" {
+		cmd.Dir = filepath.Dir(wd)
 	}
 
 	err := cmd.Run()

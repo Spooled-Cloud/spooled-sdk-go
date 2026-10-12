@@ -37,7 +37,10 @@ var (
 	skipIngest  = getEnvBool("SKIP_INGEST", true)
 	grpcAddress = getEnv("GRPC_ADDRESS", "localhost:50051")
 	grpcUseTLS  = getEnvBool("GRPC_USE_TLS", false)
-	testPrefix  string
+	// runUnsafe lets production runs create an organization and a billing
+	// portal session; off by default there (see Runner.RunUnsafe).
+	runUnsafe  = getEnvBool("RUN_UNSAFE_TESTS", false)
+	testPrefix string
 	// isProduction detects if we're running against production API (which requires HTTPS webhooks)
 	isProduction bool
 )
@@ -163,6 +166,105 @@ func generateTestID() string {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Leases: the API requires the claim's lease_id on complete, fail, heartbeat
+// and renew (REST 422 / gRPC InvalidArgument without it). Claims and dequeues
+// go through these helpers, which remember each job's lease; settlements look
+// it up.
+// ─────────────────────────────────────────────────────────────────────────────
+
+var leases sync.Map // job ID -> lease ID
+
+func rememberLease(jobID, leaseID string) {
+	if jobID != "" && leaseID != "" {
+		leases.Store(jobID, leaseID)
+	}
+}
+
+// leaseFor returns the lease the last claim of jobID got ("" when it was never
+// claimed, which the tests of error paths rely on).
+func leaseFor(jobID string) string {
+	if v, ok := leases.Load(jobID); ok {
+		return v.(string)
+	}
+	return ""
+}
+
+func claim(ctx context.Context, client *spooled.Client, req *resources.ClaimJobsRequest) (*resources.ClaimJobsResponse, error) {
+	resp, err := client.Jobs().Claim(ctx, req)
+	if resp != nil {
+		for _, job := range resp.Jobs {
+			if job.LeaseID != nil {
+				rememberLease(job.ID, *job.LeaseID)
+			}
+		}
+	}
+	return resp, err
+}
+
+func restLease(jobID string) *string {
+	if lease := leaseFor(jobID); lease != "" {
+		return &lease
+	}
+	return nil
+}
+
+func withRESTLeaseComplete(jobID string, req *resources.CompleteJobRequest) *resources.CompleteJobRequest {
+	if req.LeaseID == nil {
+		req.LeaseID = restLease(jobID)
+	}
+	return req
+}
+
+func withRESTLeaseFail(jobID string, req *resources.FailJobRequest) *resources.FailJobRequest {
+	if req.LeaseID == nil {
+		req.LeaseID = restLease(jobID)
+	}
+	return req
+}
+
+func dequeue(ctx context.Context, c *spooledgrpc.Client, req *spooledgrpc.DequeueRequest) (*spooledgrpc.DequeueResponse, error) {
+	resp, err := c.Dequeue(ctx, req)
+	if resp != nil {
+		for _, job := range resp.Jobs {
+			rememberLease(job.ID, job.LeaseID)
+		}
+	}
+	return resp, err
+}
+
+func withGRPCCompleteLease(req *spooledgrpc.CompleteRequest) *spooledgrpc.CompleteRequest {
+	if req.LeaseID == "" {
+		req.LeaseID = leaseFor(req.JobID)
+	}
+	return req
+}
+
+func withGRPCFailLease(req *spooledgrpc.FailRequest) *spooledgrpc.FailRequest {
+	if req.LeaseID == "" {
+		req.LeaseID = leaseFor(req.JobID)
+	}
+	return req
+}
+
+func withGRPCRenewLease(req *spooledgrpc.RenewLeaseRequest) *spooledgrpc.RenewLeaseRequest {
+	if req.LeaseID == "" {
+		req.LeaseID = leaseFor(req.JobID)
+	}
+	return req
+}
+
+// RunUnsafe runs a step that changes account-level state (a new organization,
+// a Stripe billing portal session). Against production it is skipped unless
+// RUN_UNSAFE_TESTS=1.
+func (r *Runner) RunUnsafe(name string, fn func()) {
+	if isProduction && !runUnsafe {
+		r.Skip(name, "production-unsafe; set RUN_UNSAFE_TESTS=1 to run it")
+		return
+	}
+	r.Run(name, fn)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -377,7 +479,7 @@ func testOrganization(client *spooled.Client) {
 		}
 	})
 
-	r.Run("Create new organization", func() {
+	r.RunUnsafe("Create new organization", func() {
 		// Try to create org - may be limited by tier
 		newOrg, err := client.Organizations().Create(ctx, &resources.CreateOrganizationRequest{
 			Name: fmt.Sprintf("%s-test-org", testPrefix),
@@ -420,7 +522,8 @@ func testAPIKeys(client *spooled.Client) {
 		})
 		assertNoError(err)
 		assertNotEmpty(key.ID, "key ID should exist")
-		assertTrue(strings.HasPrefix(key.Key, "sk_"), "key should start with sk_")
+		// The API issues sp_live_ / sp_test_ keys; older keys start with sk_.
+		assertTrue(strings.HasPrefix(key.Key, "sp_") || strings.HasPrefix(key.Key, "sk_"), "key should start with sp_ or sk_")
 		createdKeyID = key.ID
 		createdKeyValue = key.Key
 		log(fmt.Sprintf("Created key: %s", key.ID))
@@ -740,7 +843,7 @@ func testJobLifecycle(client *spooled.Client) {
 			Hostname:  "test-worker",
 		})
 
-		claimed, err := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claimed, err := claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
@@ -751,10 +854,10 @@ func testJobLifecycle(client *spooled.Client) {
 		updatedJob, _ := client.Jobs().Get(ctx, jobResp.ID)
 		assertEqual(string(updatedJob.Status), "processing", "status should be processing")
 
-		client.Jobs().Complete(ctx, jobResp.ID, &resources.CompleteJobRequest{
+		client.Jobs().Complete(ctx, jobResp.ID, withRESTLeaseComplete(jobResp.ID, &resources.CompleteJobRequest{
 			WorkerID: worker.ID,
 			Result:   map[string]interface{}{"done": true},
-		})
+		}))
 		client.Workers().Deregister(ctx, worker.ID)
 	})
 
@@ -767,16 +870,16 @@ func testJobLifecycle(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "test-worker",
 		})
-		client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
 
-		err := client.Jobs().Complete(ctx, jobResp.ID, &resources.CompleteJobRequest{
+		err := client.Jobs().Complete(ctx, jobResp.ID, withRESTLeaseComplete(jobResp.ID, &resources.CompleteJobRequest{
 			WorkerID: worker.ID,
 			Result:   map[string]interface{}{"completed": true},
-		})
+		}))
 		assertNoError(err)
 
 		job, _ := client.Jobs().Get(ctx, jobResp.ID)
@@ -795,16 +898,16 @@ func testJobLifecycle(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "test-worker",
 		})
-		client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
 
-		err := client.Jobs().Fail(ctx, jobResp.ID, &resources.FailJobRequest{
+		err := client.Jobs().Fail(ctx, jobResp.ID, withRESTLeaseFail(jobResp.ID, &resources.FailJobRequest{
 			WorkerID: worker.ID,
 			Error:    "Test failure",
-		})
+		}))
 		assertNoError(err)
 
 		job, _ := client.Jobs().Get(ctx, jobResp.ID)
@@ -822,15 +925,15 @@ func testJobLifecycle(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "test-worker",
 		})
-		client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
-		client.Jobs().Complete(ctx, jobResp.ID, &resources.CompleteJobRequest{
+		client.Jobs().Complete(ctx, jobResp.ID, withRESTLeaseComplete(jobResp.ID, &resources.CompleteJobRequest{
 			WorkerID: worker.ID,
 			Result:   map[string]interface{}{"answer": 42},
-		})
+		}))
 
 		completed, _ := client.Jobs().Get(ctx, jobResp.ID)
 		assertTrue(completed.Result != nil, "result should exist")
@@ -861,16 +964,16 @@ func testJobFailureAndRetry(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "retry-worker",
 		})
-		client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
 
-		client.Jobs().Fail(ctx, jobResp.ID, &resources.FailJobRequest{
+		client.Jobs().Fail(ctx, jobResp.ID, withRESTLeaseFail(jobResp.ID, &resources.FailJobRequest{
 			WorkerID: worker.ID,
 			Error:    "retry me",
-		})
+		}))
 
 		time.Sleep(100 * time.Millisecond)
 
@@ -893,16 +996,16 @@ func testJobFailureAndRetry(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "exhaust-worker",
 		})
-		client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
 
-		client.Jobs().Fail(ctx, jobResp.ID, &resources.FailJobRequest{
+		client.Jobs().Fail(ctx, jobResp.ID, withRESTLeaseFail(jobResp.ID, &resources.FailJobRequest{
 			WorkerID: worker.ID,
 			Error:    "permanent failure",
-		})
+		}))
 
 		failed, _ := client.Jobs().Get(ctx, jobResp.ID)
 		assertTrue(failed.Status == "failed" || failed.Status == "deadletter",
@@ -921,15 +1024,15 @@ func testJobFailureAndRetry(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "manual-worker",
 		})
-		client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
-		client.Jobs().Fail(ctx, jobResp.ID, &resources.FailJobRequest{
+		client.Jobs().Fail(ctx, jobResp.ID, withRESTLeaseFail(jobResp.ID, &resources.FailJobRequest{
 			WorkerID: worker.ID,
 			Error:    "will retry",
-		})
+		}))
 
 		retried, err := client.Jobs().Retry(ctx, jobResp.ID)
 		assertNoError(err)
@@ -1477,32 +1580,32 @@ func testWorkflowDAG(client *spooled.Client) {
 		}
 
 		// Process job A
-		claimed, _ := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claimed, _ := claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: dagQueue,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
 		if claimed != nil && len(claimed.Jobs) > 0 {
-			client.Jobs().Complete(ctx, claimed.Jobs[0].ID, &resources.CompleteJobRequest{
+			client.Jobs().Complete(ctx, claimed.Jobs[0].ID, withRESTLeaseComplete(claimed.Jobs[0].ID, &resources.CompleteJobRequest{
 				WorkerID: worker.ID,
 				Result:   map[string]interface{}{"completed": "A"},
-			})
+			}))
 			log("Completed job A")
 
 			// Wait a bit for B to become available
 			time.Sleep(200 * time.Millisecond)
 
 			// Process job B (should now be available)
-			claimedB, _ := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+			claimedB, _ := claim(ctx, client, &resources.ClaimJobsRequest{
 				QueueName: dagQueue,
 				WorkerID:  worker.ID,
 				Limit:     ptr(1),
 			})
 			if claimedB != nil && len(claimedB.Jobs) > 0 {
-				client.Jobs().Complete(ctx, claimedB.Jobs[0].ID, &resources.CompleteJobRequest{
+				client.Jobs().Complete(ctx, claimedB.Jobs[0].ID, withRESTLeaseComplete(claimedB.Jobs[0].ID, &resources.CompleteJobRequest{
 					WorkerID: worker.ID,
 					Result:   map[string]interface{}{"completed": "B"},
-				})
+				}))
 				log("Completed job B")
 			}
 		}
@@ -1534,16 +1637,16 @@ func testWorkflowDAG(client *spooled.Client) {
 			return
 		}
 
-		claimed, _ := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claimed, _ := claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: wfQueue,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
 		if claimed != nil && len(claimed.Jobs) > 0 {
-			client.Jobs().Complete(ctx, claimed.Jobs[0].ID, &resources.CompleteJobRequest{
+			client.Jobs().Complete(ctx, claimed.Jobs[0].ID, withRESTLeaseComplete(claimed.Jobs[0].ID, &resources.CompleteJobRequest{
 				WorkerID: worker.ID,
 				Result:   map[string]interface{}{"completed": true},
-			})
+			}))
 		}
 
 		time.Sleep(200 * time.Millisecond)
@@ -1581,7 +1684,7 @@ func testBilling(client *spooled.Client) {
 		assertNotEmpty(string(status.PlanTier), "plan tier should exist")
 	})
 
-	r.Run("Create portal session", func() {
+	r.RunUnsafe("Create portal session", func() {
 		session, err := client.Billing().CreatePortalSession(ctx, &resources.CreatePortalRequest{})
 		if err == nil && session != nil {
 			assertNotEmpty(session.URL, "portal URL should exist")
@@ -1675,7 +1778,7 @@ func testGRPC(client *spooled.Client) {
 	})
 
 	r.Run("gRPC: Dequeue job", func() {
-		result, err := grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		result, err := dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName:        queueName,
 			WorkerID:         workerID,
 			LeaseDurationSec: 60,
@@ -1699,16 +1802,16 @@ func testGRPC(client *spooled.Client) {
 			QueueName: queueName,
 			Payload:   map[string]any{"complete": "test"},
 		})
-		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: queueName,
 			WorkerID:  workerID,
 			BatchSize: 1,
 		})
-		err := grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{
+		err := grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{
 			JobID:    enqResult.JobID,
 			WorkerID: workerID,
 			Result:   map[string]any{"processed": true},
-		})
+		}))
 		assertNoError(err)
 		log("Job completed via gRPC")
 	})
@@ -1747,7 +1850,7 @@ func testGRPC(client *spooled.Client) {
 		jobID := enqResult.JobID
 
 		// Dequeue
-		deqResult, _ := grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		deqResult, _ := dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: lifecycleQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
@@ -1756,19 +1859,19 @@ func testGRPC(client *spooled.Client) {
 		assertEqual(deqResult.Jobs[0].ID, jobID, "job id")
 
 		// Renew lease
-		renewResult, _ := grpcClient.RenewLease(context.Background(), &spooledgrpc.RenewLeaseRequest{
+		renewResult, _ := grpcClient.RenewLease(context.Background(), withGRPCRenewLease(&spooledgrpc.RenewLeaseRequest{
 			JobID:         jobID,
 			WorkerID:      wID,
 			ExtensionSecs: 120,
-		})
+		}))
 		assertTrue(renewResult.Success, "renew success")
 
 		// Complete
-		grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{
+		grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{
 			JobID:    jobID,
 			WorkerID: wID,
 			Result:   map[string]any{"completed": true},
-		})
+		}))
 
 		// Get job to verify
 		job, _ := grpcClient.GetJob(context.Background(), jobID)
@@ -1798,18 +1901,18 @@ func testGRPC(client *spooled.Client) {
 		jobID := enqResult.JobID
 
 		// Dequeue
-		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: failQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
 		})
 
 		// Fail
-		err := grpcClient.Fail(context.Background(), &spooledgrpc.FailRequest{
+		err := grpcClient.Fail(context.Background(), withGRPCFailLease(&spooledgrpc.FailRequest{
 			JobID:    jobID,
 			WorkerID: wID,
 			Error:    "Test failure",
-		})
+		}))
 		assertNoError(err)
 
 		// Cleanup
@@ -1908,7 +2011,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 		}
 
 		// Batch dequeue
-		deqResult, _ := grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		deqResult, _ := dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName:        batchQueue,
 			WorkerID:         wID,
 			BatchSize:        10,
@@ -1919,10 +2022,10 @@ func testGRPCAdvanced(client *spooled.Client) {
 
 		// Complete all
 		for _, job := range deqResult.Jobs {
-			grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{
+			grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{
 				JobID:    job.ID,
 				WorkerID: wID,
-			})
+			}))
 		}
 		grpcClient.DeregisterWorker(context.Background(), wID)
 	})
@@ -1941,23 +2044,23 @@ func testGRPCAdvanced(client *spooled.Client) {
 			Payload:   map[string]any{"test": "renew"},
 		})
 
-		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName:        renewQueue,
 			WorkerID:         wID,
 			BatchSize:        1,
 			LeaseDurationSec: 30,
 		})
 
-		renewResult, _ := grpcClient.RenewLease(context.Background(), &spooledgrpc.RenewLeaseRequest{
+		renewResult, _ := grpcClient.RenewLease(context.Background(), withGRPCRenewLease(&spooledgrpc.RenewLeaseRequest{
 			JobID:         enqResult.JobID,
 			WorkerID:      wID,
 			ExtensionSecs: 60,
-		})
+		}))
 		assertTrue(renewResult.Success, "renew success")
 		assertTrue(renewResult.NewExpiresAt != nil, "new expires at")
 		log(fmt.Sprintf("Renewed lease: %v", renewResult.NewExpiresAt))
 
-		grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{JobID: enqResult.JobID, WorkerID: wID})
+		grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{JobID: enqResult.JobID, WorkerID: wID}))
 		grpcClient.DeregisterWorker(context.Background(), wID)
 	})
 
@@ -1978,22 +2081,22 @@ func testGRPCAdvanced(client *spooled.Client) {
 			Payload:   map[string]any{"test": "renew-fail"},
 		})
 
-		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: renewFailQueue,
 			WorkerID:  reg1.WorkerID,
 			BatchSize: 1,
 		})
 
-		// Try wrong worker
-		renewResult, _ := grpcClient.RenewLease(context.Background(), &spooledgrpc.RenewLeaseRequest{
+		// Try wrong worker (with the right lease): an error or Success=false
+		renewResult, renewErr := grpcClient.RenewLease(context.Background(), withGRPCRenewLease(&spooledgrpc.RenewLeaseRequest{
 			JobID:         enqResult.JobID,
 			WorkerID:      reg2.WorkerID, // Wrong worker!
 			ExtensionSecs: 60,
-		})
-		assertTrue(!renewResult.Success, "renew should fail with wrong worker")
+		}))
+		assertTrue(renewErr != nil || (renewResult != nil && !renewResult.Success), "renew should fail with wrong worker")
 		log("Renew correctly failed with wrong worker ID")
 
-		grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{JobID: enqResult.JobID, WorkerID: reg1.WorkerID})
+		grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{JobID: enqResult.JobID, WorkerID: reg1.WorkerID}))
 		grpcClient.DeregisterWorker(context.Background(), reg1.WorkerID)
 		grpcClient.DeregisterWorker(context.Background(), reg2.WorkerID)
 	})
@@ -2013,19 +2116,25 @@ func testGRPCAdvanced(client *spooled.Client) {
 			MaxRetries: ptr(int32(0)),
 		})
 
-		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: failDLQQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
 		})
 
-		err := grpcClient.Fail(context.Background(), &spooledgrpc.FailRequest{
+		failed, err := grpcClient.FailWithResponse(context.Background(), withGRPCFailLease(&spooledgrpc.FailRequest{
 			JobID:    enqResult.JobID,
 			WorkerID: wID,
 			Error:    "Intentional failure to DLQ",
 			NoRetry:  true,
-		})
+		}))
 		assertNoError(err)
+		assertTrue(!failed.WillRetry, "NoRetry: the server must not schedule a retry")
+		// gRPC cannot send max_retries 0 (proto3 int32), so the job has the
+		// default retries: only retry=false on the wire dead-letters it.
+		job, err := client.Jobs().Get(context.Background(), enqResult.JobID)
+		assertNoError(err)
+		assertEqual(string(job.Status), "deadletter", "NoRetry job status")
 		log("Fail to DLQ succeeded")
 
 		grpcClient.DeregisterWorker(context.Background(), wID)
@@ -2046,19 +2155,19 @@ func testGRPCAdvanced(client *spooled.Client) {
 			MaxRetries: ptr(int32(0)),
 		})
 
-		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: failLongQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
 		})
 
 		longError := strings.Repeat("x", 5000)
-		err := grpcClient.Fail(context.Background(), &spooledgrpc.FailRequest{
+		err := grpcClient.Fail(context.Background(), withGRPCFailLease(&spooledgrpc.FailRequest{
 			JobID:    enqResult.JobID,
 			WorkerID: wID,
 			Error:    "Error: " + longError,
 			NoRetry:  true,
-		})
+		}))
 		assertNoError(err)
 		log("Fail with 5000+ char error message succeeded")
 
@@ -2141,15 +2250,15 @@ func testGRPCAdvanced(client *spooled.Client) {
 		}
 
 		// Dequeue and complete one
-		deq1, _ := grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		deq1, _ := dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: mixedQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
 		})
 		if len(deq1.Jobs) > 0 {
-			grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{
+			grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{
 				JobID: deq1.Jobs[0].ID, WorkerID: wID,
-			})
+			}))
 		}
 
 		// Check stats
@@ -2191,7 +2300,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 		})
 
 		// Dequeue one at a time (with nil checks)
-		deq1, _ := grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{QueueName: priorityQueue, WorkerID: wID, BatchSize: 1})
+		deq1, _ := dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{QueueName: priorityQueue, WorkerID: wID, BatchSize: 1})
 		if deq1 == nil || len(deq1.Jobs) == 0 {
 			log("No jobs dequeued for priority test (may be queue timing)")
 			grpcClient.DeregisterWorker(context.Background(), wID)
@@ -2200,22 +2309,22 @@ func testGRPCAdvanced(client *spooled.Client) {
 		if enqHigh != nil {
 			assertEqual(deq1.Jobs[0].ID, enqHigh.JobID, "first should be high priority")
 		}
-		grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{JobID: deq1.Jobs[0].ID, WorkerID: wID})
+		grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{JobID: deq1.Jobs[0].ID, WorkerID: wID}))
 
-		deq2, _ := grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{QueueName: priorityQueue, WorkerID: wID, BatchSize: 1})
+		deq2, _ := dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{QueueName: priorityQueue, WorkerID: wID, BatchSize: 1})
 		if deq2 != nil && len(deq2.Jobs) > 0 {
 			if enqMed != nil {
 				assertEqual(deq2.Jobs[0].ID, enqMed.JobID, "second should be medium priority")
 			}
-			grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{JobID: deq2.Jobs[0].ID, WorkerID: wID})
+			grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{JobID: deq2.Jobs[0].ID, WorkerID: wID}))
 		}
 
-		deq3, _ := grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{QueueName: priorityQueue, WorkerID: wID, BatchSize: 1})
+		deq3, _ := dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{QueueName: priorityQueue, WorkerID: wID, BatchSize: 1})
 		if deq3 != nil && len(deq3.Jobs) > 0 {
 			if enqLow != nil {
 				assertEqual(deq3.Jobs[0].ID, enqLow.JobID, "third should be low priority")
 			}
-			grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{JobID: deq3.Jobs[0].ID, WorkerID: wID})
+			grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{JobID: deq3.Jobs[0].ID, WorkerID: wID}))
 		}
 
 		log("Priority order verified: high → medium → low")
@@ -2297,13 +2406,13 @@ func testGRPCAdvanced(client *spooled.Client) {
 			Payload:   map[string]any{"test": "result"},
 		})
 
-		grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: resultQueue,
 			WorkerID:  wID,
 			BatchSize: 1,
 		})
 
-		err := grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{
+		err := grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{
 			JobID:    enqResult.JobID,
 			WorkerID: wID,
 			Result: map[string]any{
@@ -2314,7 +2423,7 @@ func testGRPCAdvanced(client *spooled.Client) {
 					"metrics":   map[string]any{"duration_ms": 1234},
 				},
 			},
-		})
+		}))
 		assertNoError(err)
 		log("Complex result stored successfully")
 
@@ -2353,7 +2462,7 @@ func testGRPCErrors(client *spooled.Client) {
 	})
 
 	r.Run("gRPC Error: Dequeue without worker ID", func() {
-		_, err := grpcClient.Dequeue(context.Background(), &spooledgrpc.DequeueRequest{
+		_, err := dequeue(context.Background(), grpcClient, &spooledgrpc.DequeueRequest{
 			QueueName: "test-queue",
 			WorkerID:  "", // Empty worker ID
 			BatchSize: 1,
@@ -2363,10 +2472,10 @@ func testGRPCErrors(client *spooled.Client) {
 	})
 
 	r.Run("gRPC Error: Complete non-existent job", func() {
-		err := grpcClient.Complete(context.Background(), &spooledgrpc.CompleteRequest{
+		err := grpcClient.Complete(context.Background(), withGRPCCompleteLease(&spooledgrpc.CompleteRequest{
 			JobID:    "non-existent-job-id",
 			WorkerID: "some-worker",
-		})
+		}))
 		assertError(err, "should error for non-existent job")
 		log("Correctly errored for non-existent job")
 	})
@@ -2527,17 +2636,17 @@ func testWorkerIntegration(client *spooled.Client) {
 			Hostname:  "e2e-worker",
 		})
 
-		claimed, _ := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claimed, _ := claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
 		assertTrue(len(claimed.Jobs) > 0, "should claim job")
 
-		err := client.Jobs().Complete(ctx, jobResp.ID, &resources.CompleteJobRequest{
+		err := client.Jobs().Complete(ctx, jobResp.ID, withRESTLeaseComplete(jobResp.ID, &resources.CompleteJobRequest{
 			WorkerID: worker.ID,
 			Result:   map[string]interface{}{"processed": true},
-		})
+		}))
 		assertNoError(err)
 
 		completed, _ := client.Jobs().Get(ctx, jobResp.ID)
@@ -2561,7 +2670,7 @@ func testWorkerIntegration(client *spooled.Client) {
 			})
 		}
 
-		claimed, _ := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claimed, _ := claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(3),
@@ -2569,10 +2678,10 @@ func testWorkerIntegration(client *spooled.Client) {
 		assertTrue(len(claimed.Jobs) > 0, "should claim multiple jobs")
 
 		for _, job := range claimed.Jobs {
-			client.Jobs().Complete(ctx, job.ID, &resources.CompleteJobRequest{
+			client.Jobs().Complete(ctx, job.ID, withRESTLeaseComplete(job.ID, &resources.CompleteJobRequest{
 				WorkerID: worker.ID,
 				Result:   map[string]interface{}{"done": true},
-			})
+			}))
 		}
 
 		client.Workers().Deregister(ctx, worker.ID)
@@ -2637,15 +2746,15 @@ func testWebhookDelivery(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "webhook-worker",
 		})
-		client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
-		client.Jobs().Complete(ctx, jobResp.ID, &resources.CompleteJobRequest{
+		client.Jobs().Complete(ctx, jobResp.ID, withRESTLeaseComplete(jobResp.ID, &resources.CompleteJobRequest{
 			WorkerID: worker.ID,
 			Result:   map[string]interface{}{"done": true},
-		})
+		}))
 
 		payload, received := waitForWebhook(5 * time.Second)
 		if received {
@@ -2667,15 +2776,15 @@ func testWebhookDelivery(client *spooled.Client) {
 			QueueName: queueName,
 			Hostname:  "webhook-fail-worker",
 		})
-		client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+		claim(ctx, client, &resources.ClaimJobsRequest{
 			QueueName: queueName,
 			WorkerID:  worker.ID,
 			Limit:     ptr(1),
 		})
-		client.Jobs().Fail(ctx, jobResp.ID, &resources.FailJobRequest{
+		client.Jobs().Fail(ctx, jobResp.ID, withRESTLeaseFail(jobResp.ID, &resources.FailJobRequest{
 			WorkerID: worker.ID,
 			Error:    "Test failure for webhook",
-		})
+		}))
 
 		payload, received := waitForWebhook(5 * time.Second)
 		if received {
@@ -2843,10 +2952,10 @@ func testErrorHandling(client *spooled.Client) {
 			Payload:   map[string]interface{}{"error": "test"},
 		})
 
-		err := client.Jobs().Complete(ctx, jobResp.ID, &resources.CompleteJobRequest{
+		err := client.Jobs().Complete(ctx, jobResp.ID, withRESTLeaseComplete(jobResp.ID, &resources.CompleteJobRequest{
 			WorkerID: "fake-worker",
 			Result:   map[string]interface{}{"done": true},
-		})
+		}))
 		assertError(err, "should not complete pending job")
 		client.Jobs().Cancel(ctx, jobResp.ID)
 	})
@@ -2866,8 +2975,10 @@ func testMetrics() {
 		resp, err := http.Get(fmt.Sprintf("%s/metrics", baseURL))
 		if err == nil {
 			resp.Body.Close()
-			assertTrue(resp.StatusCode == 200 || resp.StatusCode == 404,
-				"metrics should be accessible or not found")
+			// /metrics needs the metrics token on Spooled Cloud (401/403 without
+			// it); a self-hosted server may serve it openly or not at all.
+			assertTrue(resp.StatusCode == 200 || resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404,
+				fmt.Sprintf("metrics should answer 200, 401, 403 or 404, got %d", resp.StatusCode))
 		}
 	})
 }
@@ -3026,7 +3137,7 @@ func testConcurrentOperations(client *spooled.Client) {
 				if werr != nil || worker == nil {
 					return
 				}
-				claimed, _ := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+				claimed, _ := claim(ctx, client, &resources.ClaimJobsRequest{
 					QueueName: queueName,
 					WorkerID:  worker.ID,
 					Limit:     ptr(1),
@@ -3249,6 +3360,7 @@ func main() {
 	testSpooledWorker(client)
 	testSDKIntegration(client)
 	testWebhookIngestion(client)
+	testAPISurface0122(client)
 
 	if skipStress {
 		fmt.Println("\n🔥 Stress & Load Testing")
@@ -3673,6 +3785,188 @@ func testWebhookIngestion(client *spooled.Client) {
 			log(fmt.Sprintf("Ingest.CustomWithToken job: %s", resp.JobID))
 		} else {
 			log("Ingest.CustomWithToken accepted")
+			return
 		}
+
+		// The inbound webhook log lists the accepted request with its job.
+		rows, err := client.Ingest().ListDeliveries(ctx, &resources.ListInboundDeliveriesParams{
+			QueueName: ptr(queueName),
+			Limit:     ptr(10),
+		})
+		assertNoError(err)
+		found := false
+		for _, row := range rows {
+			if row.JobID != nil && *row.JobID == resp.JobID {
+				found = true
+				assertTrue(row.Status != nil && *row.Status == resources.InboundDeliveryCreated, "inbound log status should be created")
+			}
+		}
+		assertTrue(found, "inbound log should list the ingested request")
+	})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST: API 0.1.122 surface (list filters, X-Has-More, history, worker
+// counters, webhook formats and events, inbound webhook log)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func testAPISurface0122(client *spooled.Client) {
+	fmt.Println("\n🆕 API 0.1.122 Surface")
+	fmt.Println(strings.Repeat("─", 60))
+
+	r := &Runner{name: "API 0.1.122"}
+	ctx := context.Background()
+	queueName := fmt.Sprintf("%s-surface", testPrefix)
+	jobType := fmt.Sprintf("%s.report", testPrefix)
+	var jobIDs []string
+	start := time.Now().Add(-time.Minute)
+
+	r.Run("List filters: job_type, q, created range, status list", func() {
+		for i := 0; i < 3; i++ {
+			resp, err := client.Jobs().Create(ctx, &resources.CreateJobRequest{
+				QueueName: queueName,
+				Payload:   map[string]any{"job_type": jobType, "n": i},
+			})
+			assertNoError(err)
+			jobIDs = append(jobIDs, resp.ID)
+		}
+		end := time.Now().Add(time.Minute)
+		page, err := client.Jobs().ListPage(ctx, &resources.ListJobsParams{
+			JobType:       ptr(jobType),
+			CreatedAfter:  &start,
+			CreatedBefore: &end,
+			Statuses:      []resources.JobStatus{resources.JobStatusPending, resources.JobStatusScheduled},
+			Limit:         ptr(2),
+		})
+		assertNoError(err)
+		assertEqual(len(page.Jobs), 2, "first page size")
+		assertTrue(page.HasMore, "X-Has-More should be true with a third job left")
+		next, err := client.Jobs().ListPage(ctx, &resources.ListJobsParams{
+			JobType: ptr(jobType), Limit: ptr(2), Offset: ptr(2),
+		})
+		assertNoError(err)
+		assertEqual(len(next.Jobs), 1, "second page size")
+		assertTrue(!next.HasMore, "X-Has-More should be false on the last page")
+
+		byQ, err := client.Jobs().List(ctx, &resources.ListJobsParams{Q: ptr(jobIDs[0][:8]), QueueName: ptr(queueName)})
+		assertNoError(err)
+		assertTrue(len(byQ) >= 1, "q should match a job ID prefix")
+
+		none, err := client.Jobs().List(ctx, &resources.ListJobsParams{
+			JobType:  ptr(jobType),
+			Statuses: []resources.JobStatus{resources.JobStatusCompleted, resources.JobStatusFailed},
+		})
+		assertNoError(err)
+		assertEqual(len(none), 0, "status list should exclude the pending jobs")
+	})
+
+	r.Run("List filters: invalid values are a 400", func() {
+		_, err := client.Jobs().List(ctx, &resources.ListJobsParams{Statuses: []resources.JobStatus{"not-a-status"}})
+		assertTrue(spooled.IsValidationError(err), fmt.Sprintf("unknown status: want ValidationError, got %v", err))
+		later := time.Now()
+		earlier := later.Add(-time.Hour)
+		_, err = client.Jobs().List(ctx, &resources.ListJobsParams{CreatedAfter: &later, CreatedBefore: &earlier})
+		assertTrue(spooled.IsValidationError(err), fmt.Sprintf("reversed range: want ValidationError, got %v", err))
+	})
+
+	r.Run("Job history lists lifecycle events", func() {
+		if len(jobIDs) == 0 {
+			panic("no jobs created")
+		}
+		worker, err := client.Workers().Register(ctx, &resources.RegisterWorkerRequest{QueueName: queueName, Hostname: "surface-worker"})
+		assertNoError(err)
+		defer client.Workers().Deregister(ctx, worker.ID)
+		claimed, err := claim(ctx, client, &resources.ClaimJobsRequest{QueueName: queueName, WorkerID: worker.ID, Limit: ptr(3)})
+		assertNoError(err)
+		assertEqual(len(claimed.Jobs), 3, "claimed jobs")
+		for i, job := range claimed.Jobs {
+			if i == 0 {
+				assertNoError(client.Jobs().Fail(ctx, job.ID, &resources.FailJobRequest{
+					WorkerID: worker.ID, LeaseID: job.LeaseID, Error: "surface test failure",
+				}))
+				continue
+			}
+			assertNoError(client.Jobs().Complete(ctx, job.ID, &resources.CompleteJobRequest{
+				WorkerID: worker.ID, LeaseID: job.LeaseID, Result: map[string]any{"ok": true},
+			}))
+		}
+		completedID := claimed.Jobs[1].ID
+
+		page, err := client.Jobs().History(ctx, completedID, nil)
+		assertNoError(err)
+		assertTrue(len(page.Events) >= 2, fmt.Sprintf("history events: %d", len(page.Events)))
+		for _, event := range page.Events {
+			assertEqual(event.JobID, completedID, "history job id")
+			assertNotEmpty(event.EventType, "event type")
+		}
+		desc, err := client.Jobs().History(ctx, completedID, &resources.JobHistoryParams{Order: ptr("desc"), Limit: ptr(1)})
+		assertNoError(err)
+		assertEqual(len(desc.Events), 1, "one event per page")
+		assertTrue(desc.HasMore, "X-Has-More on a one-event page")
+		assertEqual(desc.Events[0].ID, page.Events[len(page.Events)-1].ID, "desc starts with the newest event")
+
+		got, err := client.Workers().Get(ctx, worker.ID)
+		assertNoError(err)
+		assertEqual(got.JobsProcessed, int64(2), "jobs_processed")
+		assertEqual(got.JobsFailed, int64(1), "jobs_failed")
+		summaries, err := client.Workers().ListSummaries(ctx)
+		assertNoError(err)
+		found := false
+		for _, s := range summaries {
+			if s.ID == worker.ID {
+				found = true
+				assertEqual(s.JobsProcessed, int64(2), "summary jobs_processed")
+			}
+		}
+		assertTrue(found, "worker in list")
+		for _, id := range jobIDs {
+			client.Jobs().Cancel(ctx, id)
+		}
+	})
+
+	r.Run("Webhook format and new event types", func() {
+		discord := resources.WebhookFormatDiscord
+		wh, err := client.Webhooks().Create(ctx, &resources.CreateOutgoingWebhookRequest{
+			Name: fmt.Sprintf("%s-format", testPrefix),
+			URL:  "https://example.com/spooled-sdk-go-test",
+			Events: []resources.WebhookEvent{
+				resources.WebhookEventJobDeadlettered, resources.WebhookEventJobRetried,
+				resources.WebhookEventWorkflowCompleted, resources.WebhookEventWorkflowFailed,
+			},
+			Format:  &discord,
+			Enabled: ptr(false),
+		})
+		assertNoError(err)
+		defer client.Webhooks().Delete(ctx, wh.ID)
+		assertEqual(wh.Format, resources.WebhookFormatDiscord, "created format")
+		assertEqual(len(wh.Events), 4, "created events")
+
+		teams := resources.WebhookFormatTeams
+		updated, err := client.Webhooks().Update(ctx, wh.ID, &resources.UpdateOutgoingWebhookRequest{Format: &teams})
+		assertNoError(err)
+		assertEqual(updated.Format, resources.WebhookFormatTeams, "updated format")
+
+		renamed, err := client.Webhooks().Update(ctx, wh.ID, &resources.UpdateOutgoingWebhookRequest{Name: ptr(wh.Name + "-renamed")})
+		assertNoError(err)
+		assertEqual(renamed.Format, resources.WebhookFormatTeams, "format kept by an update without it")
+
+		got, err := client.Webhooks().Get(ctx, wh.ID)
+		assertNoError(err)
+		assertEqual(got.Format, resources.WebhookFormatTeams, "read format")
+
+		bogus := resources.WebhookFormat("bogus")
+		_, err = client.Webhooks().Update(ctx, wh.ID, &resources.UpdateOutgoingWebhookRequest{Format: &bogus})
+		assertTrue(spooled.IsValidationError(err), fmt.Sprintf("unknown format: want ValidationError, got %v", err))
+	})
+
+	r.Run("Inbound webhook log lists accepted requests", func() {
+		since := time.Now().Add(-time.Hour)
+		rows, err := client.Ingest().ListDeliveries(ctx, &resources.ListInboundDeliveriesParams{Since: &since, Limit: ptr(5)})
+		assertNoError(err)
+		assertTrue(rows != nil, "rows")
+		log(fmt.Sprintf("Inbound deliveries in the last hour: %d", len(rows)))
+		bad := resources.InboundDeliveryStatus("nope")
+		_, err = client.Ingest().ListDeliveries(ctx, &resources.ListInboundDeliveriesParams{Status: &bad})
+		assertTrue(spooled.IsValidationError(err), fmt.Sprintf("unknown status: want ValidationError, got %v", err))
 	})
 }
