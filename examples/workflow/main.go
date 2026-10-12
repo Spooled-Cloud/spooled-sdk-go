@@ -98,13 +98,17 @@ func main() {
 	fmt.Printf("Total Jobs: %d\n", wf.TotalJobs)
 	fmt.Printf("Completed: %d, Failed: %d\n", wf.CompletedJobs, wf.FailedJobs)
 
-	// Get jobs in workflow
+	// Get jobs in workflow. Workflow details carry job IDs but not the keys
+	// the jobs were defined with; ApplyKeys fills them in from the create
+	// response.
 	jobs, err := client.Workflows().Jobs().ListJobs(ctx, workflow.WorkflowID)
-	if err == nil {
-		fmt.Println("Jobs:")
-		for _, job := range jobs {
-			fmt.Printf("  - %s (%s): %s\n", job.Key, job.ID, job.Status)
-		}
+	if err != nil {
+		log.Fatalf("Failed to list workflow jobs: %v", err)
+	}
+	workflow.ApplyKeys(jobs)
+	fmt.Println("Jobs:")
+	for _, job := range jobs {
+		fmt.Printf("  - %s (%s): %s\n", job.Key, job.ID, job.Status)
 	}
 
 	// Create a more complex workflow: Fan-out/Fan-in

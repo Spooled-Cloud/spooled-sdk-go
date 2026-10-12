@@ -78,6 +78,7 @@ func main() {
 	// Dequeue jobs
 	fmt.Println("\nDequeuing jobs...")
 	workerID := fmt.Sprintf("worker-%d", time.Now().Unix())
+	failures := 0
 	resp, err := client.Dequeue(ctx, &spooledgrpc.DequeueRequest{
 		QueueName: queueName,
 		WorkerID:  workerID,
@@ -85,26 +86,52 @@ func main() {
 	})
 	if err != nil {
 		log.Printf("Failed to dequeue: %v", err)
+		failures++
 	} else {
 		fmt.Printf("  ✓ Dequeued %d job(s)\n", len(resp.Jobs))
-		for _, job := range resp.Jobs {
+		for i, job := range resp.Jobs {
 			fmt.Printf("    - %s (priority: %d)\n", job.ID, job.Priority)
 
-			// Complete the job
-			err := client.Complete(ctx, &spooledgrpc.CompleteRequest{
+			// Settle the job. LeaseID is required: the server rejects a
+			// Complete or Fail without the lease the job was dequeued with.
+			if i < len(resp.Jobs)-1 {
+				err = client.Complete(ctx, &spooledgrpc.CompleteRequest{
+					JobID:    job.ID,
+					WorkerID: workerID,
+					LeaseID:  job.LeaseID,
+					Result: map[string]any{
+						"processed": true,
+					},
+				})
+				if err != nil {
+					log.Printf("    Failed to complete: %v", err)
+					failures++
+				} else {
+					fmt.Printf("    ✓ Completed\n")
+				}
+				continue
+			}
+
+			// Fail the last one without a retry: it goes straight to the
+			// dead-letter queue.
+			failed, err := client.FailWithResponse(ctx, &spooledgrpc.FailRequest{
 				JobID:    job.ID,
 				WorkerID: workerID,
-				Result: map[string]any{
-					"processed": true,
-				},
+				LeaseID:  job.LeaseID,
+				Error:    "example: permanent failure",
+				NoRetry:  true,
 			})
 			if err != nil {
-				log.Printf("    Failed to complete: %v", err)
+				log.Printf("    Failed to fail: %v", err)
+				failures++
 			} else {
-				fmt.Printf("    ✓ Completed\n")
+				fmt.Printf("    ✓ Failed without retry (will retry: %t)\n", failed.WillRetry)
 			}
 		}
 	}
 
+	if failures > 0 {
+		log.Fatalf("gRPC example finished with %d error(s)", failures)
+	}
 	fmt.Println("\n✓ gRPC example complete!")
 }

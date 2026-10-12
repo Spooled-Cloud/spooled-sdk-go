@@ -218,7 +218,7 @@ client, err := spooled.NewClient(
     spooled.WithTimeout(30 * time.Second),
     
     // Retries (optional)
-    spooled.WithRetryConfig(spooled.RetryConfig{
+    spooled.WithRetry(spooled.RetryConfig{
         MaxRetries: 3,
         BaseDelay:  100 * time.Millisecond,
         MaxDelay:   5 * time.Second,
@@ -274,10 +274,65 @@ jobs, err := client.Jobs().List(ctx, &resources.ListJobsParams{
     Limit:     ptr(10),
 })
 
+// More filters (they combine with AND), and the X-Has-More paging hint
+since := time.Now().Add(-24 * time.Hour)
+page, err := client.Jobs().ListPage(ctx, &resources.ListJobsParams{
+    Statuses:     []resources.JobStatus{resources.JobStatusFailed, resources.JobStatusDeadletter},
+    JobType:      ptr("email.send"), // exact payload.job_type
+    Q:            ptr("invoice"),    // ID prefix, or text in the queue name or job_type
+    CreatedAfter: &since,            // also CreatedBefore; sent as RFC 3339
+    Limit:        ptr(50),
+})
+fmt.Printf("%d jobs, more: %t\n", len(page.Jobs), page.HasMore) // next page: Offset += len(page.Jobs)
+
+// A job's recorded lifecycle events (oldest first by default)
+history, err := client.Jobs().History(ctx, jobID, &resources.JobHistoryParams{Order: ptr("desc")})
+for _, event := range history.Events {
+    fmt.Printf("%s %s\n", event.CreatedAt.Format(time.RFC3339), event.EventType)
+}
+
 // Cancel a job (DELETE /jobs/{id}): only pending or scheduled jobs can be cancelled;
 // a job a worker is already processing is not interrupted
 err = client.Jobs().Cancel(ctx, jobID)
 ```
+
+An invalid filter is answered with a `400` (`*spooled.ValidationError`): an
+unknown status, a `CreatedAfter` that is not earlier than `CreatedBefore`, an
+unknown `OrderBy`/`OrderDir`. `Jobs().DLQ().ListPage` takes the same filters
+(except status) for dead-lettered jobs.
+
+#### Claiming jobs yourself
+
+The worker runtime below does this for you. When you claim jobs directly,
+`LeaseID` is **required** on `Complete`, `Fail`, `Heartbeat` and `RenewLease`:
+the API answers a call without it with `422 VALIDATION_ERROR` ("Field
+`lease_id` is required"), and one with a stale lease with `409`. The fields are
+pointers only for compatibility; always pass the claimed job's `LeaseID`.
+
+```go
+reg, err := client.Workers().Register(ctx, &resources.RegisterWorkerRequest{
+    QueueName: "my-queue",
+    Hostname:  "host-1",
+})
+claimed, err := client.Jobs().Claim(ctx, &resources.ClaimJobsRequest{
+    QueueName: "my-queue",
+    WorkerID:  reg.ID,
+    Limit:     ptr(5),
+})
+for _, job := range claimed.Jobs {
+    // ... do the work ...
+    err = client.Jobs().Complete(ctx, job.ID, &resources.CompleteJobRequest{
+        WorkerID: reg.ID,
+        LeaseID:  job.LeaseID,
+        Result:   map[string]any{"ok": true},
+    })
+}
+```
+
+`Jobs().FailWithResponse` returns `WillRetry` only when the API sends it; the
+REST endpoint currently answers `{"success": true}` alone, so it is `nil` there
+(the job is retried while `RetryCount < MaxRetries`). The gRPC
+`FailWithResponse` returns the server's decision.
 
 ### Workers
 
@@ -361,6 +416,10 @@ How the worker behaves:
   except an integer too large for a `float64` (above 2^53, such as a Discord
   ID), which arrives as a `json.Number`: `n.Int64()`.
 
+`client.Workers().Get` and `ListSummaries` report each worker's
+`JobsProcessed` (jobs it completed) and `JobsFailed` (failures it reported;
+jobs released because a lease expired are not counted).
+
 `WorkerID` is optional but worth setting. It must be 1-128 characters from
 `[A-Za-z0-9._-]`, and keeping it the same across restarts makes registration an
 upsert, so the process reclaims one worker row. Leave it empty and the server
@@ -378,7 +437,7 @@ Orchestrate multiple jobs with dependencies:
 ```go
 workflow, err := client.Workflows().Create(ctx, &resources.CreateWorkflowRequest{
     Name: "ETL Pipeline",
-    Jobs: []resources.WorkflowJob{
+    Jobs: []resources.WorkflowJobDefinition{
         {
             Key:       "extract",
             QueueName: "etl",
@@ -402,7 +461,18 @@ workflow, err := client.Workflows().Create(ctx, &resources.CreateWorkflowRequest
 // Get workflow status
 wf, err := client.Workflows().Get(ctx, workflow.WorkflowID)
 fmt.Printf("Status: %s\n", wf.Status)
+
+// Workflow details carry job IDs but not the keys the jobs were defined with;
+// the create response maps them.
+jobs, err := client.Workflows().Jobs().ListJobs(ctx, workflow.WorkflowID)
+workflow.ApplyKeys(jobs) // fills job.Key ("extract", "transform", "load")
+loadID, _ := workflow.JobID("load")
+fmt.Printf("load is job %s\n", loadID)
 ```
+
+`Workflows().Jobs().ListJobs`, `GetJob` and `GetJobsStatus` return an empty
+`Key`: the API stores no job key, it only returns the key-to-ID mapping in the
+create response (`JobIDs`). Keep that response (or `KeyByJobID()`) to translate.
 
 ### Schedules
 
@@ -437,14 +507,14 @@ queues, err := client.Queues().List(ctx)
 
 // Get queue stats
 stats, err := client.Queues().GetStats(ctx, "my-queue")
-fmt.Printf("Pending: %d, Processing: %d\n", stats.Pending, stats.Processing)
+fmt.Printf("Pending: %d, Processing: %d\n", stats.PendingJobs, stats.ProcessingJobs)
 
 // Pause/resume queue
 client.Queues().Pause(ctx, "my-queue", nil)
 client.Queues().Resume(ctx, "my-queue")
 
-// Purge all pending jobs
-client.Queues().Purge(ctx, "my-queue")
+// Delete the queue's configuration
+client.Queues().Delete(ctx, "my-queue")
 ```
 
 ### Real-time Events
@@ -499,7 +569,20 @@ other port (so `localhost:50051` is plaintext); force it either way with
 `spooled.WithGRPCTLS(true)` / `spooled.WithGRPCOptions(...)` (custom
 `tls.Config`, dial options). Payloads and results may hold any JSON-encodable
 Go value; one that cannot be encoded returns an error instead of being dropped.
-`Fail` retries the job (up to its `max_retries`) unless `NoRetry: true`.
+
+- **`LeaseID` is required** on `Complete`, `Fail` and `RenewLease`: pass the
+  dequeued job's `LeaseID`. Without it the server answers `InvalidArgument`
+  ("lease_id is required for job settlement").
+- **`Fail` retries** the job (up to its `max_retries`) unless `NoRetry: true`,
+  which dead-letters it at once. `FailWithResponse` also returns `WillRetry` and
+  `NextRetryDelaySecs`. (SDK 1.4.0 never put `NoRetry` on the wire, so such jobs
+  were retried; 1.5.0 sends it.)
+- **Payloads are protobuf `Struct`s.** A payload or result is always a JSON
+  object, and numbers are doubles: an integer of 2^53 or more (a Discord or
+  Snowflake ID) arrives rounded, and a job created over REST with a non-object
+  payload (an array, string or number) arrives over gRPC with an empty one. Use
+  the REST API for such payloads; REST keeps them exactly.
+- `RegisterWorker` takes an optional stable `WorkerID`, like the REST worker.
 
 ```go
 import "github.com/spooled-cloud/spooled-sdk-go/spooled/grpc"
@@ -526,13 +609,20 @@ jobs, err := client.Dequeue(ctx, &grpc.DequeueRequest{
     LeaseDurationSec: 300, // 5-3600; 0 = the server default (300 s on Spooled Cloud)
 })
 
-// Echo each dequeued job's LeaseID on settlement so stale executions are fenced.
+// Echo each dequeued job's LeaseID on settlement (required).
 for _, job := range jobs.Jobs {
     // Process job...
     err = client.Complete(ctx, &grpc.CompleteRequest{
         JobID: job.ID, WorkerID: "worker-1", LeaseID: job.LeaseID,
     })
 }
+
+// Or fail a job without a retry: it goes to the dead-letter queue now.
+// failed.WillRetry reports what the server decided.
+failed, err := client.FailWithResponse(ctx, &grpc.FailRequest{
+    JobID: jobs.Jobs[0].ID, WorkerID: "worker-1", LeaseID: jobs.Jobs[0].LeaseID,
+    Error: "invalid input", NoRetry: true,
+})
 
 // Stream jobs (server-side streaming)
 stream, err := client.StreamJobs(ctx, "high-throughput", "worker-1")
@@ -574,7 +664,30 @@ client.Webhooks().Test(ctx, webhook.ID)
 
 // List deliveries
 deliveries, err := client.Webhooks().Deliveries(ctx, webhook.ID, nil)
+
+// Post straight to a Slack, Discord or Teams incoming-webhook URL
+slack := resources.WebhookFormatSlack
+alerts, err := client.Webhooks().Create(ctx, &resources.CreateOutgoingWebhookRequest{
+    Name:   "Dead letters",
+    URL:    "https://hooks.slack.com/services/...",
+    Events: []resources.WebhookEvent{resources.WebhookEventJobDeadlettered, resources.WebhookEventWorkflowFailed},
+    Format: &slack, // json (default), slack, discord or teams
+})
 ```
+
+Events: `job.created`, `job.started`, `job.completed`, `job.failed`,
+`job.cancelled`, `job.deadlettered`, `job.retried`, `queue.paused`,
+`queue.resumed`, `worker.registered`, `worker.deregistered`,
+`schedule.triggered`, `workflow.completed` and `workflow.failed`
+(`resources.WebhookEvent*`). Event, format and status fields are string types,
+so a value a newer API adds decodes as its name instead of failing; compare with
+the constants rather than switching exhaustively.
+
+The inbound side has a log too: `client.Ingest().ListDeliveries(ctx, params)`
+lists the requests to `POST /webhooks/{org_id}/custom` the API accepted, newest
+first, with the job each created (`Status` `created`) or matched by idempotency
+key (`duplicate`). It takes `Status`, `Since`, `QueueName`, `Limit` and `Offset`
+and needs an API key that is not restricted to queues.
 
 **Webhooks disable themselves.** After 20 consecutive failed deliveries the
 server sets `Enabled` to `false` and `LastStatus` to `"auto_disabled"`, and the
@@ -655,8 +768,8 @@ key, err := client.APIKeys().Create(ctx, &resources.CreateAPIKeyRequest{
 })
 fmt.Printf("Key: %s (save this, it won't be shown again)\n", key.Key)
 
-// Revoke API key
-client.APIKeys().Revoke(ctx, keyID)
+// Revoke (delete) an API key
+client.APIKeys().Delete(ctx, keyID)
 ```
 
 ## Error Handling
@@ -674,18 +787,19 @@ if err != nil {
     case *spooled.AuthenticationError:
         fmt.Printf("Invalid API key: %s\n", e.Message)
     case *spooled.RateLimitError:
-        // 429 covers both request-rate limiting and plan-quota errors. The API sends only a
-        // Retry-After header (no X-RateLimit-* headers), so use e.RetryAfter; Limit,
-        // Remaining and Reset stay zero.
+        // 429 covers both request-rate limiting and plan-quota errors. A rate
+        // limit carries Retry-After (e.RetryAfter) and the X-RateLimit-* headers
+        // the API sends on every response: e.Limit, e.Remaining, e.Reset (from
+        // a Unix-seconds value) and e.Scope ("organization" or "api_key").
         // A plan quota (spooled.IsQuotaExceeded) is never retried by the SDK and
         // never trips the circuit breaker; its details are in e.Quota.
         if e.IsQuotaExceeded() {
             fmt.Printf("Plan quota exceeded: %s (%d/%d on the %s plan)\n", e.Message, e.Quota.Current, e.Quota.Limit, e.Quota.Plan)
         } else {
-            fmt.Printf("Rate limited. Retry after: %v\n", e.RetryAfter)
+            fmt.Printf("Rate limited (%s limit %d). Retry after %v, resets at %v\n", e.Scope, e.Limit, e.RetryAfter, e.Reset)
         }
     case *spooled.ValidationError:
-        fmt.Printf("Invalid request: %v\n", e.Errors)
+        fmt.Printf("Invalid request: %s %v\n", e.Message, e.Details)
     default:
         fmt.Printf("Error: %v\n", err)
     }
@@ -699,13 +813,15 @@ if errors.Is(err, spooled.ErrUnsupported) {
 }
 
 // Check error types
-if spooled.IsRetryableError(err) {
-    // Safe to retry
+if spooled.IsRetryable(err) {
+    // Safe to retry (5xx, 408, a rate-limit 429, network errors, timeouts)
 }
-if spooled.IsNetworkError(err) {
+var netErr *spooled.NetworkError
+if errors.As(err, &netErr) {
     // Network issue
 }
-if spooled.IsTimeoutError(err) {
+var timeoutErr *spooled.TimeoutError
+if errors.As(err, &timeoutErr) {
     // Request timed out
 }
 ```
