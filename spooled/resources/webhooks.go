@@ -21,6 +21,9 @@ func NewWebhooksResource(transport *httpx.Transport) *WebhooksResource {
 }
 
 // WebhookEvent represents a webhook event type.
+//
+// It is a string type: an event the API adds later decodes as its name, so
+// compare against the constants rather than switching exhaustively.
 type WebhookEvent string
 
 const (
@@ -34,6 +37,35 @@ const (
 	WebhookEventWorkerRegistered   WebhookEvent = "worker.registered"
 	WebhookEventWorkerDeregistered WebhookEvent = "worker.deregistered"
 	WebhookEventScheduleTriggered  WebhookEvent = "schedule.triggered"
+	// WebhookEventJobDeadlettered fires when a job moves to the dead-letter
+	// queue (retries used up, or failed without retry).
+	WebhookEventJobDeadlettered WebhookEvent = "job.deadlettered"
+	// WebhookEventJobRetried fires when a failed, dead-lettered or cancelled
+	// job is put back to pending by Jobs().Retry, a DLQ retry or a workflow
+	// retry.
+	WebhookEventJobRetried WebhookEvent = "job.retried"
+	// WebhookEventWorkflowCompleted fires when every job of a workflow completed.
+	WebhookEventWorkflowCompleted WebhookEvent = "workflow.completed"
+	// WebhookEventWorkflowFailed fires when a workflow fails.
+	WebhookEventWorkflowFailed WebhookEvent = "workflow.failed"
+)
+
+// WebhookFormat is the body an outgoing webhook is delivered as.
+//
+// It is a string type: a format the API adds later decodes as its name.
+type WebhookFormat string
+
+const (
+	// WebhookFormatJSON is the signed JSON envelope (id, event, created_at,
+	// data). It is the default.
+	WebhookFormatJSON WebhookFormat = "json"
+	// WebhookFormatSlack posts {"text": ...} for a Slack incoming webhook URL.
+	WebhookFormatSlack WebhookFormat = "slack"
+	// WebhookFormatDiscord posts {"content": ...} for a Discord webhook URL.
+	WebhookFormatDiscord WebhookFormat = "discord"
+	// WebhookFormatTeams posts a MessageCard for a Microsoft Teams incoming
+	// webhook URL.
+	WebhookFormatTeams WebhookFormat = "teams"
 )
 
 // OutgoingWebhook represents an outgoing webhook configuration.
@@ -43,6 +75,9 @@ type OutgoingWebhook struct {
 	Name           string         `json:"name"`
 	URL            string         `json:"url"`
 	Events         []WebhookEvent `json:"events"`
+	// Format is the delivery body: json (the default), slack, discord or
+	// teams. Empty from servers older than 0.1.122, which only send JSON.
+	Format WebhookFormat `json:"format,omitempty"`
 	// Enabled turns false on its own after 20 consecutive failed deliveries:
 	// the server auto-disables the webhook and it stops receiving events.
 	// Re-enable it with Update and Enabled set to true - that counts against
@@ -78,6 +113,9 @@ type CreateOutgoingWebhookRequest struct {
 	Events  []WebhookEvent `json:"events"`
 	Secret  *string        `json:"secret,omitempty"`
 	Enabled *bool          `json:"enabled,omitempty"`
+	// Format is the delivery body (json, slack, discord or teams). Nil sends
+	// nothing and the server uses json. An unknown value is a 400.
+	Format *WebhookFormat `json:"format,omitempty"`
 }
 
 // Create creates a new outgoing webhook.
@@ -122,6 +160,9 @@ type UpdateOutgoingWebhookRequest struct {
 	// re-enable counts against the plan webhook cap and can fail with 429
 	// QUOTA_EXCEEDED.
 	Enabled *bool `json:"enabled,omitempty"`
+	// Format changes the delivery body (json, slack, discord or teams). Nil
+	// keeps the current format.
+	Format *WebhookFormat `json:"format,omitempty"`
 }
 
 // MarshalJSON encodes the update request, turning ClearSecret into the explicit

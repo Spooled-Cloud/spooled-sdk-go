@@ -99,6 +99,12 @@ type QuotaInfo struct {
 // Retry-After header) clears by itself and is retried. A plan quota
 // (QUOTA_EXCEEDED, Quota != nil) only clears when the customer frees capacity or
 // upgrades, so it is never retried and never counts against the circuit breaker.
+//
+// RetryAfter comes from the Retry-After header. Limit, Remaining and Reset come
+// from X-RateLimit-Limit, X-RateLimit-Remaining and X-RateLimit-Reset (Unix
+// seconds), and Scope from X-RateLimit-Scope; the API sends them on every
+// authenticated response, so they are set on a rate-limit 429 from Spooled
+// Cloud and stay zero only when a server or proxy leaves them out.
 type RateLimitError struct {
 	*APIError
 	RetryAfter time.Duration
@@ -107,6 +113,10 @@ type RateLimitError struct {
 	Reset      time.Time
 	// Quota is set when the 429 is a plan-limit rejection rather than a rate limit.
 	Quota *QuotaInfo
+	// Scope is the limit Limit, Remaining and Reset describe:
+	// "organization" (the plan's request rate) or "api_key" (the key's own
+	// per-minute limit). Empty when the header is absent.
+	Scope string
 }
 
 // Unwrap returns the underlying API error.
@@ -276,6 +286,7 @@ func parseRateLimitError(baseErr *APIError, headers http.Header) *RateLimitError
 			err.Reset = time.Unix(ts, 0)
 		}
 	}
+	err.Scope = strings.TrimSpace(headers.Get("X-Ratelimit-Scope"))
 
 	return err
 }

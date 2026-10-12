@@ -150,9 +150,43 @@ type WorkflowJobMapping struct {
 }
 
 // CreateWorkflowResponse is the response from creating a workflow.
+//
+// JobIDs is the only place the API returns the job keys: workflow details
+// (Get, Jobs().ListJobs, Jobs().GetJob, Jobs().GetJobsStatus) carry job IDs
+// but no keys. Keep this response, or the map from KeyByJobID, to translate.
 type CreateWorkflowResponse struct {
 	WorkflowID string               `json:"workflow_id"`
 	JobIDs     []WorkflowJobMapping `json:"job_ids"`
+}
+
+// KeyByJobID maps each created job's ID to the key it was defined with.
+func (r *CreateWorkflowResponse) KeyByJobID() map[string]string {
+	keys := make(map[string]string, len(r.JobIDs))
+	for _, m := range r.JobIDs {
+		keys[m.JobID] = m.Key
+	}
+	return keys
+}
+
+// JobID returns the ID of the job created for key.
+func (r *CreateWorkflowResponse) JobID(key string) (string, bool) {
+	for _, m := range r.JobIDs {
+		if m.Key == key {
+			return m.JobID, true
+		}
+	}
+	return "", false
+}
+
+// ApplyKeys fills in Key on jobs from this create response, matching by job
+// ID. Jobs it does not know keep their Key.
+func (r *CreateWorkflowResponse) ApplyKeys(jobs []WorkflowJob) {
+	keys := r.KeyByJobID()
+	for i := range jobs {
+		if key, ok := keys[jobs[i].ID]; ok && jobs[i].Key == "" {
+			jobs[i].Key = key
+		}
+	}
 }
 
 // Create creates a new workflow.
@@ -194,8 +228,12 @@ type WorkflowJobsResource struct {
 
 // WorkflowJob represents a job within a workflow with dependencies info.
 type WorkflowJob struct {
-	ID             string     `json:"id"`
-	Key            string     `json:"key"`
+	ID string `json:"id"`
+	// Key is the key the job was defined with. The API does not return it on
+	// workflow details, so it is empty when read through Jobs().ListJobs or
+	// Jobs().GetJob; fill it from the create response with
+	// CreateWorkflowResponse.ApplyKeys (or KeyByJobID).
+	Key            string     `json:"key,omitempty"`
 	QueueName      string     `json:"queue_name"`
 	Status         JobStatus  `json:"status"`
 	DependsOn      []string   `json:"depends_on,omitempty"`
@@ -257,6 +295,7 @@ func jobsFromWorkflowDetail(detail workflowDetail) []WorkflowJob {
 // ListJobs retrieves all jobs in a workflow.
 //
 // The backend has no /workflows/{id}/jobs route; job rows live on GET /workflows/{id}.
+// Those rows carry no job key, so Key is empty: see CreateWorkflowResponse.ApplyKeys.
 func (r *WorkflowJobsResource) ListJobs(ctx context.Context, workflowID string) ([]WorkflowJob, error) {
 	var detail workflowDetail
 	if err := r.base.Get(ctx, fmt.Sprintf("/api/v1/workflows/%s", workflowID), &detail); err != nil {
@@ -290,7 +329,9 @@ type WorkflowJobStatusResponse struct {
 
 // WorkflowJobStatus represents a job's status in a workflow.
 type WorkflowJobStatus struct {
-	Key       string    `json:"key"`
+	// Key is empty unless the API returns job keys, which it currently does
+	// not; map JobID back to a key with CreateWorkflowResponse.KeyByJobID.
+	Key       string    `json:"key,omitempty"`
 	JobID     string    `json:"job_id"`
 	Status    JobStatus `json:"status"`
 	DependsOn []string  `json:"depends_on,omitempty"`

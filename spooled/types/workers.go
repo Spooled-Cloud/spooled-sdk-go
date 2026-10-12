@@ -26,6 +26,10 @@ type Worker struct {
 	Metadata       JsonObject   `json:"metadata"`
 	Version        *string      `json:"version,omitempty"`
 	RegisteredAt   time.Time    `json:"registered_at"`
+	// JobsProcessed counts the jobs this worker completed (API 0.1.122+).
+	JobsProcessed int64 `json:"jobs_processed"`
+	// JobsFailed counts the failures this worker reported (API 0.1.122+).
+	JobsFailed int64 `json:"jobs_failed"`
 }
 
 // WorkerSummary is a summary of a worker.
@@ -37,6 +41,10 @@ type WorkerSummary struct {
 	CurrentJobs    int          `json:"current_jobs"`
 	MaxConcurrency int          `json:"max_concurrency"`
 	LastHeartbeat  time.Time    `json:"last_heartbeat"`
+	// JobsProcessed counts the jobs this worker completed (API 0.1.122+).
+	JobsProcessed int64 `json:"jobs_processed"`
+	// JobsFailed counts the failures this worker reported (API 0.1.122+).
+	JobsFailed int64 `json:"jobs_failed"`
 }
 
 // RegisterWorkerRequest is the request to register a worker.

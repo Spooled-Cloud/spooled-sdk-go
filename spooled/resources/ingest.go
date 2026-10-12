@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 )
@@ -81,6 +83,76 @@ func (r *IngestResource) CustomWithToken(ctx context.Context, orgID, webhookToke
 		return &CustomWebhookResponse{}, nil
 	}
 	return out, nil
+}
+
+// InboundDeliveryStatus says what an accepted inbound webhook request did.
+//
+// It is a string type: a status the API adds later decodes as its name.
+type InboundDeliveryStatus string
+
+const (
+	// InboundDeliveryCreated: the request created a new job.
+	InboundDeliveryCreated InboundDeliveryStatus = "created"
+	// InboundDeliveryDuplicate: the request's idempotency key matched an
+	// existing job, so no job was created.
+	InboundDeliveryDuplicate InboundDeliveryStatus = "duplicate"
+)
+
+// InboundWebhookDelivery is one accepted request to
+// POST /webhooks/{org_id}/custom, as the inbound webhook log lists it. The log
+// keeps neither the request payload nor any signature.
+type InboundWebhookDelivery struct {
+	ID        string `json:"id"`
+	Provider  string `json:"provider"`
+	EventType string `json:"event_type"`
+	// MatchedQueue is the queue the job went to.
+	MatchedQueue *string `json:"matched_queue,omitempty"`
+	// JobID is the job the request created or matched. Nil for entries
+	// recorded before API 0.1.122.
+	JobID *string `json:"job_id,omitempty"`
+	// Status is InboundDeliveryCreated or InboundDeliveryDuplicate. Nil for
+	// entries recorded before API 0.1.122.
+	Status    *InboundDeliveryStatus `json:"status,omitempty"`
+	CreatedAt time.Time              `json:"created_at"`
+}
+
+// ListInboundDeliveriesParams are parameters for Ingest().ListDeliveries.
+type ListInboundDeliveriesParams struct {
+	// Status keeps entries with this status. An unknown value is a 400.
+	Status *InboundDeliveryStatus `json:"status,omitempty"`
+	// Since keeps entries received at or after this instant.
+	Since *time.Time `json:"since,omitempty"`
+	// QueueName keeps entries whose job went to this queue.
+	QueueName *string `json:"queue_name,omitempty"`
+	// Limit is the page size, 1-100 (API default 50).
+	Limit  *int `json:"limit,omitempty"`
+	Offset *int `json:"offset,omitempty"`
+}
+
+// ListDeliveries returns the inbound webhook log
+// (GET /webhooks/deliveries): the requests to POST /webhooks/{org_id}/custom
+// the API accepted, newest first. The log is organization-wide, so an API key
+// restricted to some queues is refused (403).
+func (r *IngestResource) ListDeliveries(ctx context.Context, params *ListInboundDeliveriesParams) ([]InboundWebhookDelivery, error) {
+	query := url.Values{}
+	if params != nil {
+		if params.Status != nil {
+			query.Set("status", string(*params.Status))
+		}
+		setTimeParam(query, "since", params.Since)
+		if params.QueueName != nil {
+			query.Set("queue_name", *params.QueueName)
+		}
+		AddPaginationParams(query, params.Limit, params.Offset)
+	}
+	var result []InboundWebhookDelivery
+	if err := r.base.GetWithQuery(ctx, "/api/v1/webhooks/deliveries", query, &result); err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = []InboundWebhookDelivery{}
+	}
+	return result, nil
 }
 
 // GitHubIngestOptions configures GitHub webhook ingestion.

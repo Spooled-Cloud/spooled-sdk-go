@@ -158,35 +158,166 @@ func (r *JobsResource) Get(ctx context.Context, id string) (*Job, error) {
 }
 
 // ListJobsParams are parameters for listing jobs.
+//
+// Filters combine with AND. The API answers an invalid filter (an unknown
+// status, OrderBy or OrderDir, or CreatedAfter not earlier than CreatedBefore)
+// with a 400 ValidationError rather than ignoring it.
 type ListJobsParams struct {
-	QueueName *string    `json:"queue_name,omitempty"`
-	Status    *JobStatus `json:"status,omitempty"`
-	Tag       *string    `json:"tag,omitempty"` // Filter by a single tag
-	Limit     *int       `json:"limit,omitempty"`
-	Offset    *int       `json:"offset,omitempty"`
+	QueueName *string `json:"queue_name,omitempty"`
+	// Status filters by one status. Statuses filters by several; when both are
+	// set the job may have any of them.
+	Status *JobStatus `json:"status,omitempty"`
+	Tag    *string    `json:"tag,omitempty"` // Filter by a single tag
+	Limit  *int       `json:"limit,omitempty"`
+	Offset *int       `json:"offset,omitempty"`
+	// Statuses keeps jobs in any of these statuses. It is sent as one
+	// comma-separated status parameter (status=failed,deadletter).
+	Statuses []JobStatus `json:"statuses,omitempty"`
+	// Q is a case-insensitive search: a job matches when its ID starts with
+	// it, or its queue name or payload job_type contains it. Payloads are not
+	// searched.
+	Q *string `json:"q,omitempty"`
+	// JobType keeps jobs whose payload job_type is exactly this value.
+	JobType *string `json:"job_type,omitempty"`
+	// CreatedAfter keeps jobs created at or after this instant.
+	CreatedAfter *time.Time `json:"created_after,omitempty"`
+	// CreatedBefore keeps jobs created before this instant.
+	CreatedBefore *time.Time `json:"created_before,omitempty"`
+	// OrderBy is the sort column: created_at (default), updated_at,
+	// scheduled_at, completed_at, priority, status, queue_name or retry_count.
+	OrderBy *string `json:"order_by,omitempty"`
+	// OrderDir is "desc" (default) or "asc".
+	OrderDir *string `json:"order_dir,omitempty"`
 }
 
-// List retrieves a list of jobs.
+// query encodes the parameters for GET /jobs and GET /jobs/dlq.
+func (p *ListJobsParams) query() url.Values {
+	query := url.Values{}
+	if p == nil {
+		return query
+	}
+	if p.QueueName != nil {
+		query.Set("queue_name", *p.QueueName)
+	}
+	statuses := make([]string, 0, len(p.Statuses)+1)
+	if p.Status != nil {
+		statuses = append(statuses, string(*p.Status))
+	}
+	for _, status := range p.Statuses {
+		statuses = append(statuses, string(status))
+	}
+	if len(statuses) > 0 {
+		query.Set("status", strings.Join(statuses, ","))
+	}
+	if p.Tag != nil {
+		query.Set("tag", *p.Tag)
+	}
+	if p.Q != nil {
+		query.Set("q", *p.Q)
+	}
+	if p.JobType != nil {
+		query.Set("job_type", *p.JobType)
+	}
+	setTimeParam(query, "created_after", p.CreatedAfter)
+	setTimeParam(query, "created_before", p.CreatedBefore)
+	if p.OrderBy != nil {
+		query.Set("order_by", *p.OrderBy)
+	}
+	if p.OrderDir != nil {
+		query.Set("order_dir", *p.OrderDir)
+	}
+	AddPaginationParams(query, p.Limit, p.Offset)
+	return query
+}
+
+// setTimeParam sends t as an RFC 3339 instant in UTC, the form the API parses.
+func setTimeParam(query url.Values, key string, t *time.Time) {
+	if t != nil {
+		query.Set(key, t.UTC().Format(time.RFC3339Nano))
+	}
+}
+
+// JobsPage is one page of a job list.
+type JobsPage struct {
+	Jobs []Job
+	// HasMore is the API's X-Has-More header: true when this page is full and
+	// at least one more job matches. Ask for the next page with Offset
+	// advanced by len(Jobs).
+	HasMore bool
+}
+
+// List retrieves a list of jobs. ListPage also reports whether more follow.
 func (r *JobsResource) List(ctx context.Context, params *ListJobsParams) ([]Job, error) {
+	page, err := r.ListPage(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return page.Jobs, nil
+}
+
+// ListPage retrieves one page of jobs together with the X-Has-More hint.
+func (r *JobsResource) ListPage(ctx context.Context, params *ListJobsParams) (*JobsPage, error) {
+	var page JobsPage
+	hasMore, err := r.base.getPage(ctx, "/api/v1/jobs", params.query(), &page.Jobs)
+	if err != nil {
+		return nil, err
+	}
+	page.HasMore = hasMore
+	return &page, nil
+}
+
+// JobHistoryEvent is one recorded lifecycle event of a job.
+type JobHistoryEvent struct {
+	ID    string `json:"id"`
+	JobID string `json:"job_id"`
+	// EventType names the event, such as "created", "claimed", "completed" or
+	// "failed". Compare it as a string: the API can add event types.
+	EventType string `json:"event_type"`
+	// WorkerID is the worker involved, when there was one.
+	WorkerID *string `json:"worker_id,omitempty"`
+	// Details is the event's JSON details (any JSON value).
+	Details   any       `json:"details,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// JobHistoryParams are parameters for reading a job's history.
+type JobHistoryParams struct {
+	// Order is "asc" (default, oldest event first) or "desc" (newest first).
+	Order *string `json:"order_dir,omitempty"`
+	// Limit is the page size, 1-500 (API default 100).
+	Limit  *int `json:"limit,omitempty"`
+	Offset *int `json:"offset,omitempty"`
+}
+
+// JobHistoryPage is one page of a job's history.
+type JobHistoryPage struct {
+	Events []JobHistoryEvent
+	// HasMore is the API's X-Has-More header: true when more events follow.
+	HasMore bool
+}
+
+// History returns a job's recorded lifecycle events
+// (GET /jobs/{id}/history), oldest first unless params.Order is "desc".
+// Another organization's job, or one outside an API key's queue scope, is a
+// NotFoundError.
+func (r *JobsResource) History(ctx context.Context, id string, params *JobHistoryParams) (*JobHistoryPage, error) {
 	query := url.Values{}
 	if params != nil {
-		if params.QueueName != nil {
-			query.Set("queue_name", *params.QueueName)
-		}
-		if params.Status != nil {
-			query.Set("status", string(*params.Status))
-		}
-		if params.Tag != nil {
-			query.Set("tag", *params.Tag)
+		if params.Order != nil {
+			query.Set("order_dir", *params.Order)
 		}
 		AddPaginationParams(query, params.Limit, params.Offset)
 	}
-
-	var result []Job
-	if err := r.base.GetWithQuery(ctx, "/api/v1/jobs", query, &result); err != nil {
+	var page JobHistoryPage
+	hasMore, err := r.base.getPage(ctx, fmt.Sprintf("/api/v1/jobs/%s/history", id), query, &page.Events)
+	if err != nil {
 		return nil, err
 	}
-	return result, nil
+	if page.Events == nil {
+		page.Events = []JobHistoryEvent{}
+	}
+	page.HasMore = hasMore
+	return &page, nil
 }
 
 // Cancel cancels a job.
@@ -345,8 +476,9 @@ type ClaimedJob struct {
 	TimeoutSeconds int        `json:"timeout_seconds"`
 	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
 	// LeaseID is the lease fencing token issued by the server for this claim.
-	// Echo it back on complete/fail/heartbeat so the operation applies only to
-	// the lease this worker actually holds (nil = legacy worker_id fence).
+	// Echo it back on Complete, Fail, Heartbeat and RenewLease: the API
+	// requires it there (422 VALIDATION_ERROR without it) and applies the call
+	// only to the lease this worker actually holds.
 	LeaseID *string `json:"lease_id,omitempty"`
 }
 
@@ -368,8 +500,11 @@ func (r *JobsResource) Claim(ctx context.Context, req *ClaimJobsRequest) (*Claim
 type CompleteJobRequest struct {
 	WorkerID string `json:"worker_id"`
 	Result   any    `json:"result,omitempty"`
-	// LeaseID is the lease fencing token from the claimed job. When set, the
-	// completion succeeds only if it matches the job's current lease.
+	// LeaseID is the lease fencing token from the claimed job
+	// (ClaimedJob.LeaseID). It is required: the API answers a complete without
+	// it with 422 VALIDATION_ERROR ("Field `lease_id` is required"), and one
+	// that does not match the job's current lease with 409. It is a pointer
+	// only for compatibility; always set it.
 	LeaseID *string `json:"lease_id,omitempty"`
 }
 
@@ -383,16 +518,22 @@ func (r *JobsResource) Complete(ctx context.Context, id string, req *CompleteJob
 type FailJobRequest struct {
 	WorkerID string `json:"worker_id"`
 	Error    string `json:"error"`
-	// LeaseID is the lease fencing token from the claimed job. When set, the
-	// failure succeeds only if it matches the job's current lease.
+	// LeaseID is the lease fencing token from the claimed job
+	// (ClaimedJob.LeaseID). It is required: the API answers a fail without it
+	// with 422 VALIDATION_ERROR ("Field `lease_id` is required"), and one that
+	// does not match the job's current lease with 409. It is a pointer only for
+	// compatibility; always set it.
 	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // FailJobResponse is returned after the backend accepts a job failure.
 type FailJobResponse struct {
 	Success bool `json:"success"`
-	// WillRetry is nil when an older backend omits retry disposition. Callers can
-	// then fall back to the retry state captured with the claimed job.
+	// WillRetry and NextRetryDelaySec are filled only when the API sends them.
+	// POST /jobs/{id}/fail on Spooled Cloud currently answers {"success":true}
+	// alone, so both are nil there: decide from the claimed job instead (it is
+	// retried while RetryCount < MaxRetries), or fail over gRPC, whose
+	// FailWithResponse returns the server's decision.
 	WillRetry         *bool `json:"will_retry,omitempty"`
 	NextRetryDelaySec *int  `json:"next_retry_delay_secs,omitempty"`
 }
@@ -458,8 +599,11 @@ func (r *JobsResource) FailWithResponse(ctx context.Context, id string, req *Fai
 type HeartbeatRequest struct {
 	WorkerID         string `json:"worker_id"`
 	LeaseDurationSec *int   `json:"lease_duration_secs,omitempty"`
-	// LeaseID is the lease fencing token from the claimed job. When set, the
-	// heartbeat succeeds only if it matches the job's current lease.
+	// LeaseID is the lease fencing token from the claimed job
+	// (ClaimedJob.LeaseID). It is required: the API answers a heartbeat without
+	// it with 422 VALIDATION_ERROR, and one that does not match the job's
+	// current lease with 409. It is a pointer only for compatibility; always
+	// set it.
 	LeaseID *string `json:"lease_id,omitempty"`
 }
 
@@ -473,8 +617,10 @@ func (r *JobsResource) Heartbeat(ctx context.Context, id string, req *HeartbeatR
 type RenewLeaseRequest struct {
 	WorkerID         string `json:"worker_id"`
 	LeaseDurationSec int    `json:"lease_duration_secs,omitempty"`
-	// LeaseID is the lease fencing token from the claimed job. When set, the
-	// renewal succeeds only if it matches the job's current lease.
+	// LeaseID is the lease fencing token from the claimed job
+	// (ClaimedJob.LeaseID). It is required: RenewLease sends a job heartbeat,
+	// which the API answers with 422 VALIDATION_ERROR without it. It is a
+	// pointer only for compatibility; always set it.
 	LeaseID *string `json:"lease_id,omitempty"`
 }
 
@@ -524,28 +670,58 @@ type DLQResource struct {
 	base *Base
 }
 
-// ListDLQParams are parameters for listing DLQ jobs.
+// ListDLQParams are parameters for listing DLQ jobs. The filters work as on
+// ListJobsParams.
 type ListDLQParams struct {
 	QueueName *string `json:"queue_name,omitempty"`
 	Limit     *int    `json:"limit,omitempty"`
 	Offset    *int    `json:"offset,omitempty"`
+	// Tag keeps jobs with this tag.
+	Tag *string `json:"tag,omitempty"`
+	// Q is the same search as ListJobsParams.Q.
+	Q *string `json:"q,omitempty"`
+	// JobType keeps jobs whose payload job_type is exactly this value.
+	JobType *string `json:"job_type,omitempty"`
+	// CreatedAfter keeps jobs created at or after this instant.
+	CreatedAfter *time.Time `json:"created_after,omitempty"`
+	// CreatedBefore keeps jobs created before this instant.
+	CreatedBefore *time.Time `json:"created_before,omitempty"`
 }
 
-// List retrieves dead letter queue jobs.
+// List retrieves dead letter queue jobs. ListPage also reports whether more
+// follow.
 func (r *DLQResource) List(ctx context.Context, params *ListDLQParams) ([]Job, error) {
-	query := url.Values{}
-	if params != nil {
-		if params.QueueName != nil {
-			query.Set("queue_name", *params.QueueName)
-		}
-		AddPaginationParams(query, params.Limit, params.Offset)
-	}
-
-	var result []Job
-	if err := r.base.GetWithQuery(ctx, "/api/v1/jobs/dlq", query, &result); err != nil {
+	page, err := r.ListPage(ctx, params)
+	if err != nil {
 		return nil, err
 	}
-	return result, nil
+	return page.Jobs, nil
+}
+
+// ListPage retrieves one page of dead-lettered jobs together with the
+// X-Has-More hint.
+func (r *DLQResource) ListPage(ctx context.Context, params *ListDLQParams) (*JobsPage, error) {
+	var query url.Values
+	if params != nil {
+		query = (&ListJobsParams{
+			QueueName:     params.QueueName,
+			Limit:         params.Limit,
+			Offset:        params.Offset,
+			Tag:           params.Tag,
+			Q:             params.Q,
+			JobType:       params.JobType,
+			CreatedAfter:  params.CreatedAfter,
+			CreatedBefore: params.CreatedBefore,
+		}).query()
+	}
+
+	var page JobsPage
+	hasMore, err := r.base.getPage(ctx, "/api/v1/jobs/dlq", query, &page.Jobs)
+	if err != nil {
+		return nil, err
+	}
+	page.HasMore = hasMore
+	return &page, nil
 }
 
 // RetryDLQRequest is the request to retry DLQ jobs.

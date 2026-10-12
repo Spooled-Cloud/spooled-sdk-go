@@ -44,6 +44,13 @@ type Worker struct {
 	Version        *string        `json:"version,omitempty"`
 	RegisteredAt   time.Time      `json:"registered_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
+	// JobsProcessed counts the jobs this worker completed (API 0.1.122 or
+	// later; 0 from older servers).
+	JobsProcessed int64 `json:"jobs_processed"`
+	// JobsFailed counts the failures this worker reported, each retry it
+	// scheduled or dead-letter it caused. Jobs released because a lease
+	// expired or the worker went offline are not counted.
+	JobsFailed int64 `json:"jobs_failed"`
 }
 
 // WorkerSummary represents the summary payload returned by the worker list endpoint.
@@ -55,6 +62,10 @@ type WorkerSummary struct {
 	CurrentJobs    int          `json:"current_jobs"`
 	MaxConcurrency int          `json:"max_concurrency"`
 	LastHeartbeat  time.Time    `json:"last_heartbeat"`
+	// JobsProcessed counts the jobs this worker completed (see Worker).
+	JobsProcessed int64 `json:"jobs_processed"`
+	// JobsFailed counts the failures this worker reported (see Worker).
+	JobsFailed int64 `json:"jobs_failed"`
 }
 
 // ListSummaries retrieves worker summaries.
@@ -85,6 +96,8 @@ func (r *WorkersResource) List(ctx context.Context) ([]Worker, error) {
 			CurrentJobs:    summary.CurrentJobs,
 			MaxConcurrency: summary.MaxConcurrency,
 			LastHeartbeat:  summary.LastHeartbeat,
+			JobsProcessed:  summary.JobsProcessed,
+			JobsFailed:     summary.JobsFailed,
 		})
 	}
 	return result, nil

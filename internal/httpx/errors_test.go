@@ -410,3 +410,31 @@ func TestAsAPIError(t *testing.T) {
 		}
 	})
 }
+
+// TestParseErrorFromResponse_RateLimitScope: the API names the limit the
+// X-RateLimit-* headers describe in X-RateLimit-Scope (header names are
+// case-insensitive on the wire).
+func TestParseErrorFromResponse_RateLimitScope(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Retry-After", "1")
+	headers.Set("x-ratelimit-limit", "200")
+	headers.Set("x-ratelimit-remaining", "0")
+	headers.Set("x-ratelimit-reset", "1760270400")
+	headers.Set("x-ratelimit-scope", "api_key")
+
+	var rateLimitErr *RateLimitError
+	if !errors.As(ParseErrorFromResponse(429, []byte(`{"code":"RATE_LIMIT_EXCEEDED","message":"slow down"}`), headers), &rateLimitErr) {
+		t.Fatal("expected a RateLimitError")
+	}
+	if rateLimitErr.Scope != "api_key" {
+		t.Errorf("Scope = %q, want api_key", rateLimitErr.Scope)
+	}
+	if rateLimitErr.Limit != 200 || rateLimitErr.Remaining != 0 || rateLimitErr.Reset.Unix() != 1760270400 {
+		t.Errorf("Limit/Remaining/Reset = %d/%d/%v", rateLimitErr.Limit, rateLimitErr.Remaining, rateLimitErr.Reset)
+	}
+
+	headers.Del("x-ratelimit-scope")
+	if !errors.As(ParseErrorFromResponse(429, []byte(`{}`), headers), &rateLimitErr) || rateLimitErr.Scope != "" {
+		t.Errorf("Scope without the header = %q, want empty", rateLimitErr.Scope)
+	}
+}

@@ -86,7 +86,8 @@ type JobSummary struct {
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
-// ListJobsParams are parameters for listing jobs.
+// ListJobsParams are parameters for listing jobs. See
+// resources.ListJobsParams, which sends them.
 type ListJobsParams struct {
 	QueueName *string    `json:"queue_name,omitempty"`
 	Status    *JobStatus `json:"status,omitempty"`
@@ -95,6 +96,30 @@ type ListJobsParams struct {
 	Offset    *int       `json:"offset,omitempty"`
 	OrderBy   *string    `json:"order_by,omitempty"`
 	OrderDir  *string    `json:"order_dir,omitempty"`
+	// Statuses keeps jobs in any of these statuses (one comma-separated
+	// status parameter on the wire).
+	Statuses []JobStatus `json:"statuses,omitempty"`
+	// Q matches a job whose ID starts with it, or whose queue name or payload
+	// job_type contains it (case-insensitive).
+	Q *string `json:"q,omitempty"`
+	// JobType keeps jobs whose payload job_type is exactly this value.
+	JobType *string `json:"job_type,omitempty"`
+	// CreatedAfter keeps jobs created at or after this instant (RFC 3339).
+	CreatedAfter *time.Time `json:"created_after,omitempty"`
+	// CreatedBefore keeps jobs created before this instant (RFC 3339).
+	CreatedBefore *time.Time `json:"created_before,omitempty"`
+}
+
+// JobHistoryEvent is one recorded lifecycle event of a job
+// (GET /jobs/{id}/history).
+type JobHistoryEvent struct {
+	ID    string `json:"id"`
+	JobID string `json:"job_id"`
+	// EventType names the event; the API can add event types.
+	EventType string    `json:"event_type"`
+	WorkerID  *string   `json:"worker_id,omitempty"`
+	Details   any       `json:"details,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // JobStats represents job statistics.
@@ -155,12 +180,18 @@ type ClaimedJob struct {
 	MaxRetries     int        `json:"max_retries"`
 	TimeoutSeconds int        `json:"timeout_seconds"`
 	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
+	// LeaseID is the lease fencing token for this claim. Complete, fail and
+	// heartbeat require it.
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // CompleteJobRequest is the request to complete a job.
 type CompleteJobRequest struct {
 	WorkerID string `json:"worker_id"`
 	Result   any    `json:"result,omitempty"`
+	// LeaseID is the claimed job's lease fencing token. It is required: the
+	// API answers a complete without it with 422 VALIDATION_ERROR.
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // CompleteJobResponse is the response from completing a job.
@@ -172,6 +203,9 @@ type CompleteJobResponse struct {
 type FailJobRequest struct {
 	WorkerID string `json:"worker_id"`
 	Error    string `json:"error"`
+	// LeaseID is the claimed job's lease fencing token. It is required: the
+	// API answers a fail without it with 422 VALIDATION_ERROR.
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // FailJobResponse is the response from failing a job.
@@ -183,6 +217,9 @@ type FailJobResponse struct {
 type HeartbeatJobRequest struct {
 	WorkerID         string `json:"worker_id"`
 	LeaseDurationSec *int   `json:"lease_duration_secs,omitempty"`
+	// LeaseID is the claimed job's lease fencing token. It is required: the
+	// API answers a heartbeat without it with 422 VALIDATION_ERROR.
+	LeaseID *string `json:"lease_id,omitempty"`
 }
 
 // HeartbeatJobResponse is the response from a job heartbeat.

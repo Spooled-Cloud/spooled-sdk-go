@@ -94,8 +94,10 @@ type ListWorkflowsParams struct {
 
 // WorkflowJob represents a job within a workflow with dependencies info.
 type WorkflowJob struct {
-	ID             string     `json:"id"`
-	Key            string     `json:"key"`
+	ID string `json:"id"`
+	// Key is empty when read from workflow details: the API returns job keys
+	// only in the create response (CreateWorkflowResponse.JobIDs).
+	Key            string     `json:"key,omitempty"`
 	QueueName      string     `json:"queue_name"`
 	Status         JobStatus  `json:"status"`
 	DependsOn      []string   `json:"depends_on,omitempty"`
@@ -107,7 +109,8 @@ type WorkflowJob struct {
 
 // WorkflowJobStatus represents the status of jobs in a workflow.
 type WorkflowJobStatus struct {
-	Key       string    `json:"key"`
+	// Key is empty unless the API returns job keys (it currently does not).
+	Key       string    `json:"key,omitempty"`
 	JobID     string    `json:"job_id"`
 	Status    JobStatus `json:"status"`
 	DependsOn []string  `json:"depends_on,omitempty"`

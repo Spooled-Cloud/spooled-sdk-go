@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 )
@@ -46,6 +47,29 @@ func (b *Base) GetWithQuery(ctx context.Context, path string, query url.Values, 
 		return err
 	}
 	return decodeResponse(resp, result)
+}
+
+// hasMoreHeader is the response header with which the list endpoints say
+// whether another page follows (their bodies are bare arrays).
+const hasMoreHeader = "X-Has-More"
+
+// getPage performs a GET request and also returns the X-Has-More paging hint:
+// true only when the API sent "true". An API that sends no header reports
+// false, so callers fall back to comparing the page length with the limit.
+func (b *Base) getPage(ctx context.Context, path string, query url.Values, result any) (bool, error) {
+	resp, err := b.transport.Do(ctx, &httpx.Request{
+		Method: http.MethodGet,
+		Path:   path,
+		Query:  valuestoMap(query),
+	})
+	if err != nil {
+		return false, err
+	}
+	if err := decodeResponse(resp, result); err != nil {
+		return false, err
+	}
+	hasMore, _ := strconv.ParseBool(strings.TrimSpace(resp.Headers.Get(hasMoreHeader)))
+	return hasMore, nil
 }
 
 // Post performs a POST request.

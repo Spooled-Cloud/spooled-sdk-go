@@ -20,6 +20,20 @@ const (
 	WebhookEventWorkerRegistered   WebhookEvent = "worker.registered"
 	WebhookEventWorkerDeregistered WebhookEvent = "worker.deregistered"
 	WebhookEventScheduleTriggered  WebhookEvent = "schedule.triggered"
+	WebhookEventJobDeadlettered    WebhookEvent = "job.deadlettered"
+	WebhookEventJobRetried         WebhookEvent = "job.retried"
+	WebhookEventWorkflowCompleted  WebhookEvent = "workflow.completed"
+	WebhookEventWorkflowFailed     WebhookEvent = "workflow.failed"
+)
+
+// WebhookFormat is the body an outgoing webhook is delivered as.
+type WebhookFormat string
+
+const (
+	WebhookFormatJSON    WebhookFormat = "json"
+	WebhookFormatSlack   WebhookFormat = "slack"
+	WebhookFormatDiscord WebhookFormat = "discord"
+	WebhookFormatTeams   WebhookFormat = "teams"
 )
 
 // OutgoingWebhook represents an outgoing webhook configuration.
@@ -29,6 +43,8 @@ type OutgoingWebhook struct {
 	Name           string         `json:"name"`
 	URL            string         `json:"url"`
 	Events         []WebhookEvent `json:"events"`
+	// Format is the delivery body: json (default), slack, discord or teams.
+	Format WebhookFormat `json:"format,omitempty"`
 	// Enabled turns false on its own after 20 consecutive failed deliveries:
 	// the server auto-disables the webhook and it stops receiving events.
 	// Re-enable it with an update carrying Enabled set to true - that counts
@@ -54,6 +70,8 @@ type CreateOutgoingWebhookRequest struct {
 	Events  []WebhookEvent `json:"events"`
 	Secret  *string        `json:"secret,omitempty"`
 	Enabled *bool          `json:"enabled,omitempty"`
+	// Format is the delivery body; nil means json.
+	Format *WebhookFormat `json:"format,omitempty"`
 }
 
 // UpdateOutgoingWebhookRequest is the request to update an outgoing webhook.
@@ -80,6 +98,8 @@ type UpdateOutgoingWebhookRequest struct {
 	// re-enable counts against the plan webhook cap and can fail with 429
 	// QUOTA_EXCEEDED.
 	Enabled *bool `json:"enabled,omitempty"`
+	// Format changes the delivery body; nil keeps the current one.
+	Format *WebhookFormat `json:"format,omitempty"`
 }
 
 // MarshalJSON encodes the update request, turning ClearSecret into the explicit
@@ -146,6 +166,19 @@ type ListDeliveriesParams struct {
 	Status *WebhookDeliveryStatus `json:"status,omitempty"`
 	Limit  *int                   `json:"limit,omitempty"`
 	Offset *int                   `json:"offset,omitempty"`
+}
+
+// InboundWebhookDelivery is one entry of the inbound webhook log
+// (GET /webhooks/deliveries): an accepted POST /webhooks/{org_id}/custom.
+type InboundWebhookDelivery struct {
+	ID           string  `json:"id"`
+	Provider     string  `json:"provider"`
+	EventType    string  `json:"event_type"`
+	MatchedQueue *string `json:"matched_queue,omitempty"`
+	JobID        *string `json:"job_id,omitempty"`
+	// Status is "created" or "duplicate"; nil for entries before API 0.1.122.
+	Status    *string   `json:"status,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // RetryDeliveryResponse is the response from retrying a webhook delivery.

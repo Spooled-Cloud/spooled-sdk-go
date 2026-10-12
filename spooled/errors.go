@@ -42,7 +42,9 @@ type ConflictError = httpx.ConflictError
 type ValidationError = httpx.ValidationError
 
 // RateLimitError represents a 429 error. It carries rate-limit metadata parsed
-// from the response headers (RetryAfter, Limit, Remaining, Reset).
+// from the response headers: RetryAfter from Retry-After, and Limit, Remaining,
+// Reset (a Unix-seconds instant) and Scope from the X-RateLimit-* headers the
+// API sends.
 type RateLimitError = httpx.RateLimitError
 
 // PayloadTooLargeError represents a 413 error.
@@ -189,7 +191,8 @@ var (
 )
 
 // ValidateAPIKey validates the format of an API key.
-// Accepts both sk_ (production keys) and sp_ (documentation examples) prefixes.
+// Spooled Cloud issues sp_live_ and sp_test_ keys; the older sk_live_ and
+// sk_test_ prefixes are accepted too.
 //
 // The key is trimmed of surrounding whitespace (including trailing newlines)
 // before validation so callers reading keys from files or environment
@@ -201,7 +204,7 @@ func ValidateAPIKey(key string) error {
 	if key == "" {
 		return ErrNoAuth
 	}
-	// Accept both sk_ (production keys) and sp_ (doc examples to avoid GitHub secret scanning)
+	// sp_ is what the API issues; sk_ is accepted for older keys.
 	validPrefixes := []string{"sk_live_", "sk_test_", "sp_live_", "sp_test_"}
 	hasValidPrefix := false
 	for _, prefix := range validPrefixes {
