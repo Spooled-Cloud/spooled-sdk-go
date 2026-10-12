@@ -565,10 +565,13 @@ sse.ConnectWithFilter(&realtime.SubscriptionFilter{
 
 Use gRPC for high-throughput scenarios. TLS is on for port 443 and off for any
 other port (so `localhost:50051` is plaintext); force it either way with
-`grpc.ClientOptions.UseTLS` or, through the high-level client,
+`spooledgrpc.ClientOptions.UseTLS` or, through the high-level client,
 `spooled.WithGRPCTLS(true)` / `spooled.WithGRPCOptions(...)` (custom
 `tls.Config`, dial options). Payloads and results may hold any JSON-encodable
 Go value; one that cannot be encoded returns an error instead of being dropped.
+These snippets import the SDK package as `spooledgrpc`, as `examples/grpc` does:
+`google.golang.org/grpc`, which a `ProcessJobs` program usually imports too (for
+dial options and status codes), is also named `grpc`.
 
 - **`LeaseID` is required** on `Complete`, `Fail` and `RenewLease`: pass the
   dequeued job's `LeaseID`. Without it the server answers `InvalidArgument`
@@ -579,10 +582,11 @@ Go value; one that cannot be encoded returns an error instead of being dropped.
   were retried; 1.5.0 sends it.)
 - **`ProcessJobs`** (the bidirectional stream) settles with `pb` messages you
   build yourself. To fail a job there without a retry, pass the message through
-  `grpc.SetNoRetry`, as in
-  `Fail: grpc.SetNoRetry(&pb.FailRequest{JobId: id, WorkerId: w, LeaseId: lease, Error: msg})`.
+  `spooledgrpc.SetNoRetry`, as in
+  `Fail: spooledgrpc.SetNoRetry(&pb.FailRequest{JobId: id, WorkerId: w, LeaseId: lease, Error: msg})`.
   A plain `Retry: false` in a `pb.FailRequest` is not put on the wire, and the
-  server retries the job.
+  server retries the job. `SetNoRetry` is one-way: do not set `Retry` on the
+  message afterwards (see its doc comment).
 - **Payloads are protobuf `Struct`s.** A payload or result is always a JSON
   object, and numbers are doubles: an integer of 2^53 or more (a Discord or
   Snowflake ID) arrives rounded, and a job created over REST with a non-object
@@ -591,16 +595,16 @@ Go value; one that cannot be encoded returns an error instead of being dropped.
 - `RegisterWorker` takes an optional stable `WorkerID`, like the REST worker.
 
 ```go
-import "github.com/spooled-cloud/spooled-sdk-go/spooled/grpc"
+import spooledgrpc "github.com/spooled-cloud/spooled-sdk-go/spooled/grpc"
 
-client, err := grpc.NewClient(grpc.ClientOptions{
+client, err := spooledgrpc.NewClient(spooledgrpc.ClientOptions{
     Address: "grpc.spooled.cloud:443",
     APIKey:  "sp_live_...",
 })
 defer client.Close()
 
 // Enqueue a job
-resp, err := client.Enqueue(ctx, &grpc.EnqueueRequest{
+resp, err := client.Enqueue(ctx, &spooledgrpc.EnqueueRequest{
     QueueName: "high-throughput",
     Payload:   map[string]any{"data": "value"},
     Priority:  5,
@@ -608,7 +612,7 @@ resp, err := client.Enqueue(ctx, &grpc.EnqueueRequest{
 fmt.Printf("Job ID: %s\n", resp.JobID)
 
 // Dequeue jobs
-jobs, err := client.Dequeue(ctx, &grpc.DequeueRequest{
+jobs, err := client.Dequeue(ctx, &spooledgrpc.DequeueRequest{
     QueueName: "high-throughput",
     WorkerID:  "worker-1",
     BatchSize: 10,
@@ -618,14 +622,14 @@ jobs, err := client.Dequeue(ctx, &grpc.DequeueRequest{
 // Echo each dequeued job's LeaseID on settlement (required).
 for _, job := range jobs.Jobs {
     // Process job...
-    err = client.Complete(ctx, &grpc.CompleteRequest{
+    err = client.Complete(ctx, &spooledgrpc.CompleteRequest{
         JobID: job.ID, WorkerID: "worker-1", LeaseID: job.LeaseID,
     })
 }
 
 // Or fail a job without a retry: it goes to the dead-letter queue now.
 // failed.WillRetry reports what the server decided.
-failed, err := client.FailWithResponse(ctx, &grpc.FailRequest{
+failed, err := client.FailWithResponse(ctx, &spooledgrpc.FailRequest{
     JobID: jobs.Jobs[0].ID, WorkerID: "worker-1", LeaseID: jobs.Jobs[0].LeaseID,
     Error: "invalid input", NoRetry: true,
 })
@@ -646,7 +650,7 @@ previous one on that stream is completed, failed or released (or its lease ran o
 job and open one stream per job slot to run jobs in parallel (at most 100 open streams per
 organization). `StreamJobs` cannot send a lease length, so its jobs get the server default (300 s on
 Spooled Cloud). A job that can run longer than its lease must be renewed before it expires with
-`client.RenewLease(ctx, &grpc.RenewLeaseRequest{JobID: ..., WorkerID: ..., LeaseID: job.LeaseID, ExtensionSecs: 300})`
+`client.RenewLease(ctx, &spooledgrpc.RenewLeaseRequest{JobID: ..., WorkerID: ..., LeaseID: job.LeaseID, ExtensionSecs: 300})`
 (or fetched with `Dequeue` and a longer `LeaseDurationSec`, at most 3600).
 
 ### Webhooks

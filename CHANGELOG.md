@@ -8,8 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.5.0] - 2026-10-12
 
 Catches the SDK up with backend 0.1.122 and fixes what the production check of
-1.4.0 found. The API changes are additive: code that compiles against 1.4.0,
-including code that builds `spooled/grpc/pb` messages itself, still compiles.
+1.4.0 found. The release is additive with one exception:
+`resources.ListJobsParams` and `types.ListJobsParams` are no longer comparable.
+The new `Statuses []JobStatus` field is a slice, and a struct with a slice field
+cannot be compared with `==` or used as a map key, which both types could be in
+1.4.0 (every field was a pointer). Code that does either with a
+`ListJobsParams` value no longer compiles; compare the fields, or use
+`*ListJobsParams`, whose pointers still compare. Everything else that compiles
+against 1.4.0, including code that builds `spooled/grpc/pb` messages itself,
+still compiles.
 
 ### Fixed
 
@@ -72,7 +79,9 @@ including code that builds `spooled/grpc/pb` messages itself, still compiles.
 - gRPC: `grpc.SetNoRetry(*pb.FailRequest)` for code that builds
   `pb.FailRequest` itself, such as a `ProcessJobs` stream: it makes the failure
   dead-letter the job. A plain `Retry: false` is not put on the wire, and the
-  server retries the job.
+  server retries the job. `SetNoRetry` is one-way: setting `Retry` on the message
+  afterwards puts a second field 4 on the wire, and the last value wins (still
+  `false`, because the unknown field is written last).
 - `spooled/types`: `LeaseID` on `ClaimedJob`, `CompleteJobRequest`,
   `FailJobRequest` and `HeartbeatJobRequest`; the new list filters,
   `JobHistoryEvent`, `InboundWebhookDelivery`, webhook `Format` and events.

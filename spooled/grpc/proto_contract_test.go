@@ -224,6 +224,34 @@ func TestSetNoRetry(t *testing.T) {
 	}
 }
 
+// TestSetNoRetry_IsOneWay pins what the SetNoRetry doc comment says: there is no
+// undoing it. Setting Retry afterwards writes the known field 4 and the
+// unknown field 4 = 0 SetNoRetry added, two occurrences, and the unknown field
+// is written last, so the last value wins and the server still reads false.
+func TestSetNoRetry_IsOneWay(t *testing.T) {
+	fail := SetNoRetry(&pb.FailRequest{JobId: "j", WorkerId: "w", Error: "x", LeaseId: "l"})
+	fail.Retry = true
+	b, err := proto.Marshal(fail)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if got := wireFields(t, b)[4]; len(got) != 2 || got[0] != 1 || got[1] != 0 {
+		t.Fatalf("field 4 on the wire = %v, want [1 0]: the known field, then the unknown one (bytes %x)", got, b)
+	}
+	if sent, retry := backendRetry(t, b); !sent || retry {
+		t.Errorf("the backend reads retry sent=%t value=%t, want an explicit false (last value wins)", sent, retry)
+	}
+
+	// A second SetNoRetry puts it back to a single field 4 = 0.
+	b, err = proto.Marshal(SetNoRetry(fail))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if got := wireFields(t, b)[4]; len(got) != 1 || got[0] != 0 {
+		t.Errorf("after a second SetNoRetry, field 4 = %v, want exactly [0] (bytes %x)", got, b)
+	}
+}
+
 // backendFailServer serves QueueService.Fail the way the backend decides it:
 // retry omitted or true -> retried after 30 s, retry false -> dead-lettered. It
 // decodes with backendSchema, so it sees what the backend sees.

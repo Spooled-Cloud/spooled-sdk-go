@@ -411,6 +411,15 @@ const failRequestRetryField protowire.Number = 4
 // varint 0) to the message's unknown fields, which are marshaled as they are.
 // The server reads that as an explicit false, older servers as a plain false.
 // Calling it twice changes nothing. A nil req is returned as is.
+//
+// SetNoRetry is one-way. Do not set Retry on the message afterwards: a known
+// Retry of true is marshaled as field 4 = 1 and the unknown field 4 = 0 follows
+// it, so two field 4 values go on the wire and the last one wins. The server
+// still reads false, because the unknown fields are written last, but the
+// message is then ambiguous to any reader that takes the first value. To undo
+// it, build a new pb.FailRequest. The helper does not guard against the later
+// assignment: nothing observes a write to Retry, and the wire result is
+// defined (false) either way.
 func SetNoRetry(req *pb.FailRequest) *pb.FailRequest {
 	if req == nil {
 		return nil
