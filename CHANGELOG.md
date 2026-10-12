@@ -5,6 +5,104 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-10-12
+
+Catches the SDK up with backend 0.1.122 and fixes what the production check of
+1.4.0 found. Everything is additive except the regenerated `spooled/grpc/pb`
+package (see **Notes**).
+
+### Fixed
+
+- **gRPC `FailRequest.NoRetry` now dead-letters the job.** The backend made
+  `FailRequest.retry` an `optional bool` (absent = retry per `max_retries`), but
+  the SDK still generated a plain proto3 `bool`, whose `false` is never put on
+  the wire: the server read every `NoRetry: true` as "retry". The bundled proto
+  is regenerated from the backend and `Fail` always sends `retry` explicitly
+  (`true` by default, `false` for `NoRetry`). The contract test now checks
+  presence on the wire instead of `GetRetry()`, which could not tell the two
+  apart.
+- `lease_id` is required on REST complete, fail and heartbeat (`422
+  VALIDATION_ERROR` without it, since backend 0.1.121; it was a `409` before)
+  and on gRPC `Complete`, `Fail` and `RenewLease` (`InvalidArgument`, since
+  backend 0.1.100). The doc comments said "when set" and "nil = legacy
+  worker_id fence"; they now say it is required. The field types are unchanged.
+  `examples/grpc` passes `job.LeaseID` (it failed every completion yet printed
+  "complete!") and exits non-zero when a settlement fails.
+- `Workflows().Jobs().ListJobs`, `GetJob` and `GetJobsStatus` returned an empty
+  `Key` for every job: `GET /workflows/{id}` carries no job key. `Key` is now
+  `omitempty` and documented as empty, and `CreateWorkflowResponse` gains
+  `KeyByJobID()`, `JobID(key)` and `ApplyKeys(jobs)` to map keys from the create
+  response (the same approach as the Node and Python SDKs). `examples/workflow`
+  prints the keys again.
+- A graceful worker shutdown no longer logs `Failed to send worker heartbeat:
+  context canceled`: a heartbeat in flight when the drain ends is cancelled on
+  purpose.
+- `scripts/test-local` matches the current API: it echoes each claim's lease on
+  every settlement, accepts `sp_live_` / `sp_test_` keys and a token-protected
+  `/metrics` (401), checks that gRPC `NoRetry` dead-letters, and skips the steps
+  that create an organization or a billing portal session against production
+  unless `RUN_UNSAFE_TESTS=1`. `scripts/test-production.go` finds the module root
+  on Windows too.
+
+### Added
+
+- `ListJobsParams`: `Statuses` (sent as one comma-separated `status`), `Q`,
+  `JobType`, `CreatedAfter`, `CreatedBefore` (sent as RFC 3339), `OrderBy` and
+  `OrderDir`. `ListDLQParams`: `Tag`, `Q`, `JobType`, `CreatedAfter`,
+  `CreatedBefore`. The API answers an invalid filter with `400`.
+- `Jobs().ListPage` and `Jobs().DLQ().ListPage` return a `JobsPage` with
+  `HasMore` from the `X-Has-More` header. `List` is unchanged.
+- `Jobs().History(ctx, id, *JobHistoryParams)`: a job's recorded lifecycle
+  events (`GET /jobs/{id}/history`, `Order` asc/desc, `Limit`, `Offset`), with
+  `HasMore`.
+- `Worker` and `WorkerSummary` (and `spooled/types`): `JobsProcessed` and
+  `JobsFailed`.
+- Outgoing webhooks: `WebhookFormat` (`json`, `slack`, `discord`, `teams`) as
+  `Format` on the webhook and on create/update requests, and the events
+  `WebhookEventJobDeadlettered`, `WebhookEventJobRetried`,
+  `WebhookEventWorkflowCompleted` and `WebhookEventWorkflowFailed`.
+- `Ingest().ListDeliveries`: the inbound webhook log (`GET /webhooks/deliveries`,
+  filters `Status`, `Since`, `QueueName`, `Limit`, `Offset`), as
+  `InboundWebhookDelivery` rows.
+- `RateLimitError.Scope` from `X-RateLimit-Scope` (`organization` or `api_key`).
+- gRPC: `Client.FailWithResponse` returns the server's `WillRetry` and
+  `NextRetryDelaySecs`; `RegisterWorkerRequest.WorkerID` sends a stable worker
+  id.
+- `spooled/types`: `LeaseID` on `ClaimedJob`, `CompleteJobRequest`,
+  `FailJobRequest` and `HeartbeatJobRequest`; the new list filters,
+  `JobHistoryEvent`, `InboundWebhookDelivery`, webhook `Format` and events.
+
+### Documentation
+
+- README: the rate-limit section said the API sends only `Retry-After`; it sends
+  `X-RateLimit-Limit`, `-Remaining`, `-Reset` (Unix seconds) and `-Scope` too,
+  and `RateLimitError` carries them. The README used `WithRetryConfig`,
+  `IsRetryableError`, `IsNetworkError`, `IsTimeoutError`, `APIKeys().Revoke`,
+  `Queues().Purge`, `QueueStats.Pending` and `[]resources.WorkflowJob` in a
+  workflow definition, none of which compile; every Go snippet now builds
+  against the SDK. New sections cover the required `LeaseID`, list filters and
+  history, workflow keys, webhook formats, the inbound log and the gRPC payload
+  limits.
+- gRPC payloads and results are `google.protobuf.Struct`: always a JSON object,
+  numbers are doubles (integers of 2^53 or more arrive rounded), and a job
+  created over REST with a non-object payload arrives over gRPC with an empty
+  one. Use REST for those payloads.
+- `FailJobResponse.WillRetry` / `NextRetryDelaySec` are documented as nil
+  against Spooled Cloud: `POST /jobs/{id}/fail` answers `{"success":true}` only.
+
+### Notes
+
+- `spooled/grpc/pb` is regenerated from backend proto
+  `proto/spooled.proto` (commit f84174e, sha256
+  f2b5844b505e0f9c76a58ec281d98c4f062bf0f1f7c0cfdb5c834e6c64977bc3) with
+  protoc 36.2 (libprotoc), protoc-gen-go v1.36.11 and protoc-gen-go-grpc v1.6.0.
+  `pb.FailRequest.Retry` is now `*bool` and `pb.RegisterWorkerRequest` gains
+  `WorkerId *string`. Code that builds `pb.FailRequest` itself (for example on a
+  `ProcessJobs` stream) must set `Retry: proto.Bool(false)` to dead-letter; the
+  high-level `grpc.Client` API is unchanged.
+- The test fixture API key is now `sp_test_000000000000000000000000000000`, so
+  secret scanners no longer flag the test files.
+
 ## [1.4.0] - 2026-10-10
 
 A reliability pass on the worker, the transport, gRPC and the realtime clients,

@@ -1,6 +1,6 @@
 # Spooled Go SDK — Agent Knowledge Base
 
-Module tag **v1.4.0**; `internal/version.Version` + User-Agent `spooled-go/1.4.0 (GOOS; GOARCH)`.
+Module tag **v1.5.0**; `internal/version.Version` + User-Agent `spooled-go/1.5.0 (GOOS; GOARCH)`.
 
 ## Surface
 REST + worker + realtime + full gRPC. Auth REST Bearer; gRPC `x-api-key`.
