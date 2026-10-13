@@ -5,6 +5,47 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-10-13
+
+A dependency security release. The SDK's code and API are unchanged from 1.5.0
+apart from the version string. A module's `require` lines set the minimum
+versions for every program that builds it, so a program that depends on 1.5.0
+builds with the vulnerable versions below unless something else (or the program
+itself) requires newer ones; 1.5.1 raises those minimums to fixed versions.
+
+### Security
+
+- `google.golang.org/grpc` v1.81.0 -> v1.84.0. Fixes GO-2026-6348 (heap
+  exhaustion from fragmented HTTP/2 DATA frames, fixed in v1.83.1) and
+  GO-2026-6061 (xDS RBAC engine and HTTP/2 server transport, fixed in v1.82.1),
+  both reachable from the SDK's gRPC client, plus GO-2026-6443 and GO-2026-6441.
+- `golang.org/x/net` v0.53.0 -> v0.61.0. Fixes GO-2026-6617, GO-2026-6612,
+  GO-2026-6611 and GO-2026-6603 (HTTP/2, fixed in v0.60.0), all reachable
+  through gRPC's HTTP/2 transport, plus GO-2026-6610, GO-2026-5942,
+  GO-2026-5030, GO-2026-5029, GO-2026-5028, GO-2026-5027, GO-2026-5026 and
+  GO-2026-5025.
+- `golang.org/x/text` v0.36.0 -> v0.43.0 (GO-2026-5970, GO-2026-6629).
+- `golang.org/x/sys` v0.43.0 -> v0.49.0 (GO-2026-5024).
+- `google.golang.org/protobuf` v1.36.11 -> v1.36.12, and
+  `google.golang.org/genproto/googleapis/rpc` to v0.0.0-20260706201446-f0a921348800
+  (required by grpc v1.84.0).
+
+`govulncheck ./...` reported 6 vulnerabilities called from the SDK, 5 more in
+imported packages and 8 more in required modules against 1.5.0; against 1.5.1 it
+reports none.
+
+### Changed
+
+- **The module now requires Go 1.26** (`go 1.26.0` in `go.mod`, was
+  `go 1.25.0`). `golang.org/x/net` v0.60.0, the first version with the HTTP/2
+  fixes above, requires Go 1.26, as do the current `x/text` and `x/sys`. Go 1.25 left upstream support when Go 1.27 was released. A program
+  that requires this version and declares `go 1.25` has its `go` line raised to
+  1.26.0 by `go get`; a Go 1.25 toolchain then downloads a newer one when
+  `GOTOOLCHAIN` allows it, and fails when it is `local`.
+- CI tests on Go 1.26 and 1.27 (it tested only 1.25); lint, build and the
+  release workflow use Go 1.27. The gosec scan is pinned to the v2.29.0 release
+  instead of the `master` branch.
+
 ## [1.5.0] - 2026-10-12
 
 Catches the SDK up with backend 0.1.122 and fixes what the production check of
