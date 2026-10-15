@@ -5,6 +5,39 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-10-15
+
+Signed completion webhooks, the workflow job fields the API already returns, and
+a DLQ retry that can be capped and reports what it skipped. The release is
+additive: every change is a new optional field on a request or a response, and
+code that compiles against 1.5.1 still compiles and sends the same requests.
+
+### Fixed
+
+- **`Workflows().Jobs().ListJobs` and `GetJob` kept only a job's id, queue,
+  status, dependencies and timestamps.** `GET /workflows/{id}` also returns
+  each job's `payload`, `result`, `error`, `attempt` and `timeout_ms`; they were
+  dropped when the response was decoded. `resources.WorkflowJob` now has
+  `Payload`, `Result`, `Error` (a `*WorkflowJobError` with `Type`, `Message` and
+  `Stack`), `Attempt` and `TimeoutSeconds`. `TimeoutSeconds` is the API's
+  `timeout_ms` converted to seconds, like `CreateJobRequest.TimeoutSeconds`: a
+  positive value under one second is reported as 1, and an unset timeout is 0.
+- **A partial DLQ retry looked like a full one.** When reviving a dead-lettered
+  workflow step would pass the plan's `max_workflows`, the API leaves that job in
+  the DLQ and still answers HTTP 200. `RetryDLQResponse` dropped the
+  `skipped_jobs` ids, so the only sign was a `RetriedCount` lower than expected.
+  `RetryDLQResponse.SkippedJobs` now carries them.
+
+### Added
+
+- `CreateJobRequest.CompletionWebhookSecret` (`completion_webhook_secret`, in
+  `spooled/resources` and `spooled/types`): signs the completion callback with
+  `X-Spooled-Signature`. Left unset, it is not sent and the API delivers the
+  callback unsigned.
+- `RetryDLQRequest.Limit` (`limit`, in `spooled/resources` and `spooled/types`):
+  caps how many jobs one call retries. Without it every call used the API
+  default of 100, which is also the maximum.
+
 ## [1.5.1] - 2026-10-13
 
 A dependency security release. The SDK's code and API are unchanged from 1.5.0
