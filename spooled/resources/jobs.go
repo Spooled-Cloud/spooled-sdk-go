@@ -122,6 +122,9 @@ type CreateJobRequest struct {
 	Tags              any        `json:"tags,omitempty"`
 	ParentJobID       *string    `json:"parent_job_id,omitempty"`
 	CompletionWebhook *string    `json:"completion_webhook,omitempty"`
+	// CompletionWebhookSecret signs that callback (X-Spooled-Signature).
+	// Omitted, the API delivers the completion webhook unsigned.
+	CompletionWebhookSecret *string `json:"completion_webhook_secret,omitempty"`
 }
 
 // CreateJobResponse is the response from creating a job.
@@ -728,12 +731,19 @@ func (r *DLQResource) ListPage(ctx context.Context, params *ListDLQParams) (*Job
 type RetryDLQRequest struct {
 	QueueName *string  `json:"queue_name,omitempty"`
 	JobIDs    []string `json:"job_ids,omitempty"`
+	// Limit caps how many jobs one call retries. The API default and max are
+	// 100; without this field every call uses that default.
+	Limit *int `json:"limit,omitempty"`
 }
 
 // RetryDLQResponse is the response from retrying DLQ jobs.
 type RetryDLQResponse struct {
 	RetriedCount int      `json:"retried_count"`
 	RetriedJobs  []string `json:"retried_jobs,omitempty"`
+	// SkippedJobs stayed dead-lettered: reviving their workflow would pass
+	// the plan's max_workflows. A partial retry is still HTTP 200, so these
+	// ids are the only sign those jobs were not retried.
+	SkippedJobs []string `json:"skipped_jobs,omitempty"`
 }
 
 // Retry retries jobs in the dead letter queue.

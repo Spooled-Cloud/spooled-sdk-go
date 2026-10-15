@@ -226,6 +226,14 @@ type WorkflowJobsResource struct {
 	base *Base
 }
 
+// WorkflowJobError is the error object on a job in GET /workflows/{id}.
+// The jobs table stores only last_error; the API wraps it as {type, message}.
+type WorkflowJobError struct {
+	Type    string  `json:"type"`
+	Message string  `json:"message"`
+	Stack   *string `json:"stack,omitempty"`
+}
+
 // WorkflowJob represents a job within a workflow with dependencies info.
 type WorkflowJob struct {
 	ID string `json:"id"`
@@ -233,25 +241,37 @@ type WorkflowJob struct {
 	// workflow details, so it is empty when read through Jobs().ListJobs or
 	// Jobs().GetJob; fill it from the create response with
 	// CreateWorkflowResponse.ApplyKeys (or KeyByJobID).
-	Key            string     `json:"key,omitempty"`
-	QueueName      string     `json:"queue_name"`
-	Status         JobStatus  `json:"status"`
-	DependsOn      []string   `json:"depends_on,omitempty"`
-	DependencyMode *string    `json:"dependency_mode,omitempty"`
+	Key            string            `json:"key,omitempty"`
+	QueueName      string            `json:"queue_name"`
+	Status         JobStatus         `json:"status"`
+	Payload        any               `json:"payload,omitempty"`
+	Result         any               `json:"result,omitempty"`
+	Error          *WorkflowJobError `json:"error,omitempty"`
+	DependsOn      []string          `json:"depends_on,omitempty"`
+	DependencyMode *string           `json:"dependency_mode,omitempty"`
+	// Attempt is retry_count as the detail document reports it.
+	Attempt int `json:"attempt,omitempty"`
+	// TimeoutSeconds is the detail document's timeout_ms, converted to seconds.
+	TimeoutSeconds int        `json:"timeout_seconds,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
 type workflowDetailJob struct {
-	ID          string     `json:"id"`
-	Key         string     `json:"key"`
-	Queue       string     `json:"queue"`
-	QueueName   string     `json:"queue_name"`
-	Status      JobStatus  `json:"status"`
-	CreatedAt   time.Time  `json:"created_at"`
-	StartedAt   *time.Time `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at"`
+	ID          string            `json:"id"`
+	Key         string            `json:"key"`
+	Queue       string            `json:"queue"`
+	QueueName   string            `json:"queue_name"`
+	Status      JobStatus         `json:"status"`
+	Payload     any               `json:"payload"`
+	Result      any               `json:"result"`
+	Error       *WorkflowJobError `json:"error"`
+	Attempt     int               `json:"attempt"`
+	TimeoutMs   *int64            `json:"timeout_ms"`
+	CreatedAt   time.Time         `json:"created_at"`
+	StartedAt   *time.Time        `json:"started_at"`
+	CompletedAt *time.Time        `json:"completed_at"`
 }
 
 type workflowDetailDep struct {
@@ -279,17 +299,36 @@ func jobsFromWorkflowDetail(detail workflowDetail) []WorkflowJob {
 			}
 		}
 		jobs = append(jobs, WorkflowJob{
-			ID:          raw.ID,
-			Key:         raw.Key,
-			QueueName:   queue,
-			Status:      raw.Status,
-			DependsOn:   dependsOn,
-			CreatedAt:   raw.CreatedAt,
-			StartedAt:   raw.StartedAt,
-			CompletedAt: raw.CompletedAt,
+			ID:             raw.ID,
+			Key:            raw.Key,
+			QueueName:      queue,
+			Status:         raw.Status,
+			Payload:        raw.Payload,
+			Result:         raw.Result,
+			Error:          raw.Error,
+			DependsOn:      dependsOn,
+			Attempt:        raw.Attempt,
+			TimeoutSeconds: timeoutSecondsFromMs(raw.TimeoutMs),
+			CreatedAt:      raw.CreatedAt,
+			StartedAt:      raw.StartedAt,
+			CompletedAt:    raw.CompletedAt,
 		})
 	}
 	return jobs
+}
+
+// timeoutSecondsFromMs converts the detail document's timeout_ms
+// (timeout_seconds * 1000) back to seconds. A positive value under one
+// second becomes 1, so it is not reported as unset.
+func timeoutSecondsFromMs(ms *int64) int {
+	if ms == nil || *ms <= 0 {
+		return 0
+	}
+	secs := int(*ms / 1000)
+	if secs < 1 {
+		return 1
+	}
+	return secs
 }
 
 // ListJobs retrieves all jobs in a workflow.

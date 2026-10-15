@@ -394,3 +394,95 @@ func TestDLQPurge_AlwaysSendsConfirm(t *testing.T) {
 		t.Errorf("nil request body = %v, want confirm=true", bodies[1])
 	}
 }
+
+// The completion callback is unsigned unless the create body carries
+// completion_webhook_secret. An unset secret must stay off the wire.
+func TestCreate_SendsCompletionWebhookSecret(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/jobs" || r.Method != http.MethodPost {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		data, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		if err := json.Unmarshal(data, &body); err != nil {
+			t.Errorf("invalid body %s: %v", data, err)
+		}
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"job_1","created":true}`))
+	}))
+	defer server.Close()
+
+	jobs := NewJobsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	webhook := "https://example.com/hooks/done"
+	secret := "whsec_test"
+	if _, err := jobs.Create(context.Background(), &CreateJobRequest{
+		QueueName:               "emails",
+		Payload:                 map[string]any{"n": 1},
+		CompletionWebhook:       &webhook,
+		CompletionWebhookSecret: &secret,
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if bodies[0]["completion_webhook"] != webhook || bodies[0]["completion_webhook_secret"] != secret {
+		t.Fatalf("body = %v, want webhook and secret", bodies[0])
+	}
+
+	if _, err := jobs.Create(context.Background(), &CreateJobRequest{
+		QueueName: "emails",
+		Payload:   map[string]any{},
+	}); err != nil {
+		t.Fatalf("Create without secret: %v", err)
+	}
+	if _, ok := bodies[1]["completion_webhook_secret"]; ok {
+		t.Fatalf("unset secret was sent: %v", bodies[1])
+	}
+}
+
+// A partial DLQ retry is HTTP 200. skipped_jobs are the ids left dead-lettered,
+// and limit is what stops the call from always using the server default of 100.
+func TestDLQRetry_SendsLimitAndReadsSkippedJobs(t *testing.T) {
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/jobs/dlq/retry" || r.Method != http.MethodPost {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		data, _ := io.ReadAll(r.Body)
+		var body map[string]any
+		if err := json.Unmarshal(data, &body); err != nil {
+			t.Errorf("invalid body %s: %v", data, err)
+		}
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"retried_count":4,"retried_jobs":["a","b","c","d"],"skipped_jobs":["e","f"]}`))
+	}))
+	defer server.Close()
+
+	jobs := NewJobsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	limit := 4
+	res, err := jobs.DLQ().Retry(context.Background(), &RetryDLQRequest{
+		QueueName: strPtr("emails"),
+		JobIDs:    []string{"a", "b", "c", "d", "e", "f"},
+		Limit:     &limit,
+	})
+	if err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	if bodies[0]["limit"] != float64(4) || bodies[0]["queue_name"] != "emails" {
+		t.Fatalf("body = %v, want limit=4 and queue_name=emails", bodies[0])
+	}
+	if res.RetriedCount != 4 || len(res.RetriedJobs) != 4 || res.RetriedJobs[0] != "a" {
+		t.Fatalf("retried = %d %v", res.RetriedCount, res.RetriedJobs)
+	}
+	if len(res.SkippedJobs) != 2 || res.SkippedJobs[0] != "e" || res.SkippedJobs[1] != "f" {
+		t.Fatalf("SkippedJobs = %v, want [e f]", res.SkippedJobs)
+	}
+
+	if _, err := jobs.DLQ().Retry(context.Background(), &RetryDLQRequest{}); err != nil {
+		t.Fatalf("Retry without limit: %v", err)
+	}
+	if _, ok := bodies[1]["limit"]; ok {
+		t.Fatalf("unset limit was sent: %v", bodies[1])
+	}
+}

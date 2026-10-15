@@ -198,3 +198,90 @@ func TestGetJobDependencies_UnmarshalsBackendShape(t *testing.T) {
 		t.Errorf("Dependents = %+v", got.Dependents)
 	}
 }
+
+// GET /workflows/{id} jobs carry timeout_ms, payload, result, error and
+// attempt. ListJobs and GetJob used to keep only id, queue, status and timestamps.
+func TestListJobs_KeepsTimeoutPayloadResultErrorAndAttempt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/workflows/wf_1" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"wf_1",
+			"jobs":[
+				{
+					"id":"job_fail",
+					"queue":"etl",
+					"status":"failed",
+					"payload":{"step":"charge"},
+					"result":{"ok":false},
+					"error":{"type":"JobError","message":"upstream 502"},
+					"attempt":3,
+					"timeout_ms":120000,
+					"created_at":"2024-01-01T00:00:00Z"
+				},
+				{
+					"id":"job_short",
+					"queue":"etl",
+					"status":"pending",
+					"timeout_ms":500,
+					"created_at":"2024-01-01T00:00:00Z"
+				}
+			],
+			"dependencies":[
+				{"parent_job_id":"job_short","child_job_id":"job_fail","dependency_type":"all"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	res := NewWorkflowsResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	jobs, err := res.Jobs().ListJobs(context.Background(), "wf_1")
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if len(jobs) != 2 {
+		t.Fatalf("len(jobs) = %d, want 2", len(jobs))
+	}
+
+	failed := jobs[0]
+	if failed.TimeoutSeconds != 120 {
+		t.Errorf("TimeoutSeconds = %d, want 120 (from timeout_ms 120000)", failed.TimeoutSeconds)
+	}
+	payload, _ := failed.Payload.(map[string]any)
+	if payload["step"] != "charge" {
+		t.Errorf("Payload = %#v, want step=charge", failed.Payload)
+	}
+	result, _ := failed.Result.(map[string]any)
+	if result["ok"] != false {
+		t.Errorf("Result = %#v, want ok=false", failed.Result)
+	}
+	if failed.Error == nil || failed.Error.Type != "JobError" || failed.Error.Message != "upstream 502" {
+		t.Errorf("Error = %+v, want JobError upstream 502", failed.Error)
+	}
+	if failed.Attempt != 3 {
+		t.Errorf("Attempt = %d, want 3", failed.Attempt)
+	}
+	if len(failed.DependsOn) != 1 || failed.DependsOn[0] != "job_short" {
+		t.Errorf("DependsOn = %v, want [job_short]", failed.DependsOn)
+	}
+	if jobs[1].TimeoutSeconds != 1 {
+		t.Errorf("sub-second timeout_ms TimeoutSeconds = %d, want 1", jobs[1].TimeoutSeconds)
+	}
+	if jobs[1].Payload != nil || jobs[1].Error != nil {
+		t.Errorf("job without payload/error = payload %#v error %+v", jobs[1].Payload, jobs[1].Error)
+	}
+
+	got, err := res.Jobs().GetJob(context.Background(), "wf_1", "job_fail")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.TimeoutSeconds != 120 || got.Attempt != 3 || got.Error == nil || got.Error.Message != "upstream 502" {
+		t.Errorf("GetJob = %+v, want timeout 120, attempt 3, error upstream 502", got)
+	}
+	gotPayload, _ := got.Payload.(map[string]any)
+	if gotPayload["step"] != "charge" {
+		t.Errorf("GetJob Payload = %#v", got.Payload)
+	}
+}

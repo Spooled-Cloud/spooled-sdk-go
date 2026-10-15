@@ -75,3 +75,62 @@ func TestClaimedJob_RoundTripsNonObjectPayload(t *testing.T) {
 		t.Fatalf("Payload = %#v, want []any{\"item\"}", job.Payload)
 	}
 }
+
+func TestCreateJobRequest_SendsCompletionWebhookSecret(t *testing.T) {
+	secret := "whsec_test"
+	webhook := "https://example.com/hooks/done"
+	out, err := json.Marshal(&CreateJobRequest{
+		QueueName:               "emails",
+		Payload:                 map[string]any{},
+		CompletionWebhook:       &webhook,
+		CompletionWebhookSecret: &secret,
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if got["completion_webhook_secret"] != secret || got["completion_webhook"] != webhook {
+		t.Fatalf("body = %v, want webhook and secret", got)
+	}
+
+	out, err = json.Marshal(&CreateJobRequest{QueueName: "emails", Payload: map[string]any{}})
+	if err != nil {
+		t.Fatalf("Marshal unset: %v", err)
+	}
+	got = map[string]any{}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("Unmarshal unset: %v", err)
+	}
+	if _, ok := got["completion_webhook_secret"]; ok {
+		t.Fatalf("unset secret was encoded: %v", got)
+	}
+}
+
+func TestRetryDLQ_LimitAndSkippedJobs(t *testing.T) {
+	limit := 4
+	out, err := json.Marshal(&RetryDLQRequest{QueueName: strPtr("emails"), Limit: &limit})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var sent map[string]any
+	if err := json.Unmarshal(out, &sent); err != nil {
+		t.Fatalf("Unmarshal request: %v", err)
+	}
+	if sent["limit"] != float64(4) || sent["queue_name"] != "emails" {
+		t.Fatalf("request = %v, want limit=4 and queue_name=emails", sent)
+	}
+
+	var res RetryDLQResponse
+	body := `{"retried_count":4,"retried_jobs":["a","b","c","d"],"skipped_jobs":["e","f"]}`
+	if err := json.Unmarshal([]byte(body), &res); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if res.RetriedCount != 4 || len(res.SkippedJobs) != 2 || res.SkippedJobs[0] != "e" || res.SkippedJobs[1] != "f" {
+		t.Fatalf("response = %+v, want skipped [e f]", res)
+	}
+}
+
+func strPtr(s string) *string { return &s }
