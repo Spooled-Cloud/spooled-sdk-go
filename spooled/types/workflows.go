@@ -95,8 +95,9 @@ type ListWorkflowsParams struct {
 // WorkflowJob represents a job within a workflow with dependencies info.
 type WorkflowJob struct {
 	ID string `json:"id"`
-	// Key is empty when read from workflow details: the API returns job keys
-	// only in the create response (CreateWorkflowResponse.JobIDs).
+	// Key is the key the job was created with. Backend 0.1.129+ returns it on
+	// workflow details; it is empty for workflows created earlier, where only
+	// the create response (CreateWorkflowResponse.JobIDs) maps keys to IDs.
 	Key            string     `json:"key,omitempty"`
 	QueueName      string     `json:"queue_name"`
 	Status         JobStatus  `json:"status"`

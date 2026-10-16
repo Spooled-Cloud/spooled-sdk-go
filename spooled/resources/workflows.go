@@ -237,10 +237,10 @@ type WorkflowJobError struct {
 // WorkflowJob represents a job within a workflow with dependencies info.
 type WorkflowJob struct {
 	ID string `json:"id"`
-	// Key is the key the job was defined with. The API does not return it on
-	// workflow details, so it is empty when read through Jobs().ListJobs or
-	// Jobs().GetJob; fill it from the create response with
-	// CreateWorkflowResponse.ApplyKeys (or KeyByJobID).
+	// Key is the key the job was defined with. Backend 0.1.129+ returns it on
+	// workflow details (Jobs().ListJobs, Jobs().GetJob); it is empty for
+	// workflows created earlier, where CreateWorkflowResponse.ApplyKeys (or
+	// KeyByJobID) fills it from the create response.
 	Key            string            `json:"key,omitempty"`
 	QueueName      string            `json:"queue_name"`
 	Status         JobStatus         `json:"status"`
