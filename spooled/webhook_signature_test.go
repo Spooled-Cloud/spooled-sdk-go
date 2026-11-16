@@ -2,6 +2,7 @@ package spooled
 
 import (
 	"errors"
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -38,6 +39,10 @@ func TestVerifyWebhookSignature(t *testing.T) {
 		{"non-hex signature", secret, ts, "sha256=zz", body, time.Minute, now, ErrWebhookSignatureMissing},
 		{"missing timestamp", secret, "", sig, body, time.Minute, now, ErrWebhookTimestampInvalid},
 		{"non-numeric timestamp", secret, "yesterday", sig, body, time.Minute, now, ErrWebhookTimestampInvalid},
+		{"zero timestamp", secret, "0", SignWebhookPayload(secret, 0, body), body, time.Minute, now, ErrWebhookTimestampInvalid},
+		{"negative timestamp", secret, "-1", SignWebhookPayload(secret, -1, body), body, time.Minute, now, ErrWebhookTimestampInvalid},
+		{"far future (max int64)", secret, strconv.FormatInt(math.MaxInt64, 10), SignWebhookPayload(secret, math.MaxInt64, body), body, time.Minute, now, ErrWebhookTimestampExpired},
+		{"far future (year 2603, past time.Duration range)", secret, "20000000000", SignWebhookPayload(secret, 20_000_000_000, body), body, time.Minute, now, ErrWebhookTimestampExpired},
 		{"empty secret", "", ts, sig, body, time.Minute, now, ErrWebhookSecretEmpty},
 	}
 	for _, tt := range tests {

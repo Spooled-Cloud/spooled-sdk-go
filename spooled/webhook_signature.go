@@ -85,17 +85,20 @@ func verifyWebhookSignatureAt(secret, timestampHeader, signatureHeader string, b
 	}
 	timestampHeader = strings.TrimSpace(timestampHeader)
 	ts, err := strconv.ParseInt(timestampHeader, 10, 64)
-	if err != nil {
+	if err != nil || ts <= 0 {
 		return ErrWebhookTimestampInvalid
 	}
 	if tolerance <= 0 {
 		tolerance = DefaultWebhookTolerance
 	}
-	age := now.Sub(time.Unix(ts, 0))
-	if age < 0 {
-		age = -age
+	// Compare whole seconds as int64: a time.Duration difference saturates for
+	// a timestamp centuries away, and negating the saturated minimum overflows
+	// back to a negative age that would pass the check.
+	skew := now.Unix() - ts
+	if skew < 0 {
+		skew = -skew
 	}
-	if age > tolerance {
+	if skew > int64(tolerance/time.Second) {
 		return ErrWebhookTimestampExpired
 	}
 	if !hmac.Equal(given, webhookMAC(secret, timestampHeader, body)) {
