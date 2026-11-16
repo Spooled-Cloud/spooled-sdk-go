@@ -36,10 +36,8 @@ and webhook receivers get a signature check.
 - **`Schedules().Create` returned zero `MaxRetries`, `TimeoutSeconds`,
   `OrganizationID` and `CreatedAt`** when the request left them to the server,
   because `POST /schedules` answers with the id, name, cron expression and next
-  run only. `Create` now reads the schedule back with one `GET` and returns the
-  stored values. If that read fails it still returns the schedule built from
-  the create response and the request (the schedule exists, so it is not an
-  error).
+  run only. `Create` now reads the schedule back (see Changed) and returns the
+  stored values.
 - **Realtime `Event.Timestamp` was always zero.** The server puts `timestamp`
   inside `data`; it is now read from there when the event has no top-level
   timestamp.
@@ -51,6 +49,15 @@ and webhook receivers get a signature check.
 - `Jobs().List`, `ListPage` and `DLQ().List` document that the API returns job
   summaries: `Payload`, `Result`, `Tags`, `UpdatedAt` and the lease, worker and
   workflow fields are not filled; use `Jobs().Get` for the full job.
+
+### Changed
+
+- **`Schedules().Create` makes a second request.** After `POST /schedules` it
+  sends one `GET /schedules/{id}` to read the stored schedule back. The `GET`
+  is a single attempt, without retries or backoff. If it fails, `Create` still
+  returns the schedule built from the create response and the request with a
+  nil error (the schedule exists), unless `ctx` is done by then: it then
+  returns that schedule together with `ctx.Err()`.
 
 ### Added
 

@@ -3,10 +3,13 @@ package resources
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/spooled-cloud/spooled-sdk-go/internal/httpx"
 )
@@ -123,6 +126,77 @@ func TestCreate_ReadsBackStoredSchedule(t *testing.T) {
 	}
 	if got.CreatedAt.IsZero() || !got.IsActive {
 		t.Errorf("CreatedAt = %v, IsActive = %t; want the stored values", got.CreatedAt, got.IsActive)
+	}
+}
+
+// createThenGetServer answers POST /schedules with a partial create response
+// and hands GET /schedules/sch_1 to onGet, counting the GETs.
+func createThenGetServer(t *testing.T, gets *atomic.Int32, onGet http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/schedules":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"sch_1","name":"Nightly","cron_expression":"0 0 * * *"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/schedules/sch_1":
+			gets.Add(1)
+			onGet(w, r)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+}
+
+func TestCreate_ReadBackIsASingleAttempt(t *testing.T) {
+	var gets atomic.Int32
+	server := createThenGetServer(t, &gets, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"unavailable","message":"try later"}`))
+	})
+	defer server.Close()
+
+	// A 503 GET would be retried three times under this policy.
+	res := NewSchedulesResource(httpx.NewTransport(httpx.Config{
+		BaseURL: server.URL,
+		APIKey:  "sp_test_key",
+		Retry:   httpx.RetryConfig{MaxRetries: 3, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond},
+	}))
+	got, err := res.Create(context.Background(), &CreateScheduleRequest{
+		Name: "Nightly", CronExpression: "0 0 * * *", QueueName: "mail",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if n := gets.Load(); n != 1 {
+		t.Errorf("read-back GETs = %d, want 1 (no retries)", n)
+	}
+	if got.ID != "sch_1" || got.QueueName != "mail" {
+		t.Errorf("got %+v, want the schedule built from the create response", got)
+	}
+}
+
+func TestCreate_ReadBackReturnsContextError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var gets atomic.Int32
+	server := createThenGetServer(t, &gets, func(_ http.ResponseWriter, r *http.Request) {
+		cancel() // the caller gives up while the read-back is in flight
+		<-r.Context().Done()
+	})
+	defer server.Close()
+
+	res := NewSchedulesResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	got, err := res.Create(ctx, &CreateScheduleRequest{
+		Name: "Nightly", CronExpression: "0 0 * * *", QueueName: "mail",
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if got == nil || got.ID != "sch_1" {
+		t.Errorf("got %+v, want the created schedule alongside the error", got)
 	}
 }
 

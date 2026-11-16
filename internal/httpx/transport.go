@@ -210,6 +210,9 @@ type Request struct {
 	// dropping a finished job's result because an unrelated call tripped the
 	// breaker loses work the server would happily accept.
 	SkipCircuitBreaker bool
+	// NoRetry sends the request once: no retries or backoff whatever the
+	// method and error. A 401 still triggers the single token refresh.
+	NoRetry bool
 }
 
 // Response represents an HTTP response.
@@ -439,7 +442,7 @@ func (t *Transport) nextRetryDelay(attempt int, lastErr error) time.Duration {
 
 // shouldRetry determines if a request should be retried.
 func (t *Transport) shouldRetry(req *Request, err error, attempt int) bool {
-	if attempt >= t.retry.MaxRetries {
+	if req.NoRetry || attempt >= t.retry.MaxRetries {
 		return false
 	}
 

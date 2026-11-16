@@ -36,6 +36,21 @@ func (b *Base) Get(ctx context.Context, path string, result any) error {
 	return decodeResponse(resp, result)
 }
 
+// getOnce performs a GET request with a single attempt: no retries or backoff.
+// It is for best-effort reads that have a fallback, so a slow or failing
+// server does not hold the caller through the whole retry schedule.
+func (b *Base) getOnce(ctx context.Context, path string, result any) error {
+	resp, err := b.transport.Do(ctx, &httpx.Request{
+		Method:  http.MethodGet,
+		Path:    path,
+		NoRetry: true,
+	})
+	if err != nil {
+		return err
+	}
+	return decodeResponse(resp, result)
+}
+
 // GetWithQuery performs a GET request with query parameters.
 func (b *Base) GetWithQuery(ctx context.Context, path string, query url.Values, result any) error {
 	resp, err := b.transport.Do(ctx, &httpx.Request{
