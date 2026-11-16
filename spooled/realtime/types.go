@@ -88,18 +88,22 @@ func normalizeEventType(raw EventType) EventType {
 type Event struct {
 	Type EventType `json:"type"`
 	// Timestamp is when the server emitted the event. The server sends it
-	// inside data ({"type": ..., "data": {..., "timestamp": ...}}); it is read
-	// from there when the event has no top-level timestamp.
+	// inside data ({"type": ..., "data": {..., "timestamp": ...}}); the SSE
+	// and WebSocket clients read it from there when the event has no
+	// top-level timestamp.
 	Timestamp time.Time       `json:"timestamp"`
 	Data      json.RawMessage `json:"data"`
 }
 
-// UnmarshalJSON decodes an event and fills Timestamp from data.timestamp when
-// the top-level field is absent.
-func (e *Event) UnmarshalJSON(data []byte) error {
-	type eventAlias Event
-	if err := json.Unmarshal(data, (*eventAlias)(e)); err != nil {
-		return err
+// decodeEvent decodes a server event and fills Timestamp from data.timestamp
+// when the top-level field is absent. It is a function rather than an
+// UnmarshalJSON method on Event, because such a method would be promoted to
+// any user struct that embeds Event and take over decoding of the whole
+// struct, dropping its other fields.
+func decodeEvent(data []byte) (Event, error) {
+	var e Event
+	if err := json.Unmarshal(data, &e); err != nil {
+		return Event{}, err
 	}
 	if e.Timestamp.IsZero() && len(e.Data) > 0 {
 		var inner struct {
@@ -109,7 +113,7 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 			e.Timestamp = *inner.Timestamp
 		}
 	}
-	return nil
+	return e, nil
 }
 
 // JobEvent contains data for job-related events.

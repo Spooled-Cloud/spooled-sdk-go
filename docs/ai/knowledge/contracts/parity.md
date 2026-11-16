@@ -44,5 +44,5 @@
 - `NewClient` env: `SPOOLED_BASE_URL` / `SPOOLED_GRPC_ADDRESS` are applied before options, `SPOOLED_API_KEY` only when no API key or access token option is set (after trimming). The standalone `spooledgrpc.NewClient` reads no environment.
 - gRPC `Job` maps every `pb.Job` field; `Status` is the REST spelling (`resources.JobStatus`), empty for `JOB_STATUS_UNSPECIFIED`.
 - `GET /jobs` and `GET /jobs/dlq` rows are `JobSummary` (id, queue_name, status, priority, attempt, max_retries, job_type, last_error, created/scheduled/started/completed_at), decoded into `Job`; other fields stay zero. Documented on the methods.
-- Realtime events nest `timestamp` in `data`; `Event.UnmarshalJSON` copies it to `Event.Timestamp` when the top level has none.
+- Realtime events nest `timestamp` in `data`; the SSE and WebSocket clients (`decodeEvent`) copy it to `Event.Timestamp` when the top level has none; `Event` has no `UnmarshalJSON`.
 - Outgoing and completion webhooks: `X-Spooled-Timestamp` (Unix seconds) and `X-Spooled-Signature: sha256=<hex HMAC-SHA256(secret, "{ts}.{body}")>` (backend `outgoing_webhooks/service.rs sign_payload`). `spooled.VerifyWebhookSignature` checks it (constant time, tolerance default 5 min).

@@ -358,8 +358,8 @@ func (c *WebSocketClient) handleMessage(data []byte) {
 	// Parse as an event. The server tags events with a "type" field (and nests
 	// the payload under "data"); it does not acknowledge subscribe/unsubscribe,
 	// so there are no command responses to route here.
-	var event Event
-	if err := json.Unmarshal(data, &event); err != nil {
+	event, err := decodeEvent(data)
+	if err != nil {
 		c.log("Failed to parse event: %v", err)
 		return
 	}

@@ -279,8 +279,8 @@ func (c *SSEClient) handleSSEEvent(eventType string, data string) {
 	c.log("Received SSE event: type=%s data=%s", eventType, data)
 
 	// Parse the event data as JSON
-	var event Event
-	if err := json.Unmarshal([]byte(data), &event); err != nil {
+	event, err := decodeEvent([]byte(data))
+	if err != nil {
 		// If data is not valid JSON, try wrapping it
 		event = Event{
 			Type:      EventType(eventType),

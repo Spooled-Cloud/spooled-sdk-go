@@ -39,8 +39,9 @@ and webhook receivers get a signature check.
   run only. `Create` now reads the schedule back (see Changed) and returns the
   stored values.
 - **Realtime `Event.Timestamp` was always zero.** The server puts `timestamp`
-  inside `data`; it is now read from there when the event has no top-level
-  timestamp.
+  inside `data`; the SSE and WebSocket clients now read it from there when the
+  event has no top-level timestamp. `Event` has no `UnmarshalJSON` method, so a
+  struct of yours that embeds it still decodes all its fields.
 - **`examples/api-keys` and `examples/error-handling` tested a key with
   `Health()`**, which needs no authentication, so a revoked or invalid key
   looked valid. They now call `Queues().List`.

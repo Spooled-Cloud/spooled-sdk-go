@@ -52,7 +52,7 @@
 {"id": "GP-6", "sev": "P3", "summary": "gRPC Job dropped status/result/last_error/timestamps", "path": "spooled/grpc/client.go", "status": "fixed", "note": "Unreleased: pbJobToJob maps every proto field"}
 {"id": "GP-7", "sev": "P3", "summary": "Schedules().Create zero max_retries/timeout/org/created_at", "path": "spooled/resources/schedules.go", "status": "fixed", "note": "Unreleased: POST then GET, fallback to create response"}
 {"id": "GP-8", "sev": "P3", "summary": "Auth examples used Health() which needs no auth", "path": "examples/{api-keys,error-handling}", "status": "fixed", "note": "Unreleased: Queues().List"}
-{"id": "GP-9", "sev": "P3", "summary": "realtime Event.Timestamp always zero (server sends data.timestamp)", "path": "spooled/realtime/types.go", "status": "fixed", "note": "Unreleased: Event.UnmarshalJSON"}
+{"id": "GP-9", "sev": "P3", "summary": "realtime Event.Timestamp always zero (server sends data.timestamp)", "path": "spooled/realtime/types.go", "status": "fixed", "note": "Unreleased: decodeEvent in the SSE/WS decode path (not a method on Event, which embedding structs would inherit)"}
 {"id": "GP-10", "sev": "P3", "summary": "README called undefined ptr()", "path": "README.md", "status": "fixed", "note": "Unreleased: helper defined once"}
 {"id": "GP-11", "sev": "P3", "summary": "Jobs().List returns Job but API sends summaries", "path": "spooled/resources/jobs.go", "status": "documented", "note": "Unreleased: filled fields listed on List/ListPage/DLQ().List"}
 {"id": "GP-12", "sev": "P3", "summary": "No webhook signature verification helper", "path": "spooled/webhook_signature.go", "status": "fixed", "note": "Unreleased: VerifyWebhookSignature + SignWebhookPayload"}

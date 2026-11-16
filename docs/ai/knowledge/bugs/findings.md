@@ -63,7 +63,7 @@ Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if c
 | GP-6 | P3 | ~~gRPC `Job` dropped status/result/last_error/timestamps/org/worker/idempotency~~ **FIXED (Unreleased)** | `spooled/grpc/client.go pbJobToJob`, `job_fields_test.go` |
 | GP-7 | P3 | ~~`Schedules().Create` zero max_retries/timeout/org/created_at~~ **FIXED (Unreleased)**: POST then GET; GET failure falls back to `scheduleFromCreate` | `spooled/resources/schedules.go` |
 | GP-8 | P3 | ~~`examples/api-keys`, `examples/error-handling` tested auth with `Health()` (no auth)~~ **FIXED (Unreleased)**: `Queues().List` | `examples/` |
-| GP-9 | P3 | ~~realtime `Event.Timestamp` always zero (server sends `data.timestamp`)~~ **FIXED (Unreleased)** | `spooled/realtime/types.go Event.UnmarshalJSON` |
+| GP-9 | P3 | ~~realtime `Event.Timestamp` always zero (server sends `data.timestamp`)~~ **FIXED (Unreleased)** | `spooled/realtime/types.go decodeEvent` (SSE + WS decode path; no method on Event, so embedding structs decode normally) |
 | GP-10 | P3 | ~~README called undefined `ptr()`~~ **FIXED (Unreleased)**: defined once under Core Concepts | `README.md` |
 | GP-11 | P3 | `Jobs().List` returns `Job` but API sends summaries (Payload nil, UpdatedAt zero). **Documented (Unreleased)** on `List`/`ListPage`/`DLQ().List`; no type change | `spooled/resources/jobs.go` |
 | GP-12 | P3 | ~~No webhook signature helper~~ **ADDED (Unreleased)**: `VerifyWebhookSignature`, `SignWebhookPayload` | `spooled/webhook_signature.go` |
