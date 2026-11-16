@@ -177,7 +177,7 @@ func IsServerError(err error) bool {
 // Sentinel errors for common conditions
 var (
 	// ErrNoAuth is returned when no authentication is configured.
-	ErrNoAuth = errors.New("no authentication configured: set APIKey or AccessToken")
+	ErrNoAuth = errors.New("no authentication configured: set APIKey or AccessToken, or the SPOOLED_API_KEY environment variable")
 
 	// ErrInvalidAPIKey is returned when the API key format is invalid.
 	ErrInvalidAPIKey = errors.New("invalid API key format: must start with sk_live_, sk_test_, sp_live_, or sp_test_")

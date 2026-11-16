@@ -4,6 +4,7 @@ package spooled
 import (
 	"crypto/tls"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -20,6 +21,16 @@ const (
 	DefaultTimeout     = 30 * time.Second
 	DefaultAPIVersion  = "v1"
 	DefaultAPIBasePath = "/api/v1"
+)
+
+// Environment variables NewClient reads when the matching option is not set.
+const (
+	// EnvAPIKey is read when neither WithAPIKey nor WithAccessToken is given.
+	EnvAPIKey = "SPOOLED_API_KEY" // #nosec G101 -- an environment variable name, not a credential
+	// EnvBaseURL is read when WithBaseURL is not given.
+	EnvBaseURL = "SPOOLED_BASE_URL"
+	// EnvGRPCAddress is read when WithGRPCAddress is not given.
+	EnvGRPCAddress = "SPOOLED_GRPC_ADDRESS"
 )
 
 // RetryConfig configures retry behavior for failed requests.
@@ -289,9 +300,18 @@ func newDefaultConfig() *Config {
 	}
 }
 
-// resolveConfig applies options and resolves derived values.
+// resolveConfig applies the environment, then options, and resolves derived
+// values. Options always win over the environment: SPOOLED_BASE_URL and
+// SPOOLED_GRPC_ADDRESS are applied before the options, and SPOOLED_API_KEY is
+// used only when no option supplied an API key or an access token.
 func resolveConfig(opts ...Option) *Config {
 	cfg := newDefaultConfig()
+	if baseURL := strings.TrimSpace(os.Getenv(EnvBaseURL)); baseURL != "" {
+		cfg.BaseURL = strings.TrimSuffix(baseURL, "/")
+	}
+	if addr := strings.TrimSpace(os.Getenv(EnvGRPCAddress)); addr != "" {
+		cfg.GRPCAddress = addr
+	}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -305,6 +325,10 @@ func resolveConfig(opts ...Option) *Config {
 	cfg.AccessToken = strings.TrimSpace(cfg.AccessToken)
 	cfg.RefreshToken = strings.TrimSpace(cfg.RefreshToken)
 	cfg.AdminKey = strings.TrimSpace(cfg.AdminKey)
+
+	if cfg.APIKey == "" && cfg.AccessToken == "" {
+		cfg.APIKey = strings.TrimSpace(os.Getenv(EnvAPIKey))
+	}
 
 	// Derive WS URL from base URL if not explicitly set
 	if cfg.WSURL == DefaultWSURL && cfg.BaseURL != DefaultBaseURL {

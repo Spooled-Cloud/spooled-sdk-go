@@ -46,3 +46,14 @@
 {"id":"SDKGW9-05","sev":"P3","summary":"No SDK surface for backend 0.1.122 additions","path":"spooled/resources/{jobs,workers,webhooks,ingest}.go","status":"fixed","note":"Fixed in 1.5.0"}
 {"id":"SDKGW9-06","sev":"P3","summary":"`FailJobResponse.WillRetry` nil over REST (API answers success only)","path":"spooled/resources/jobs.go","status":"documented","note":"1.5.0 documents it; gRPC FailWithResponse returns it; needs a backend change to fill over REST"}
 {"id":"SDKGW9-07","sev":"P3","summary":"Graceful worker stop logged a canceled worker heartbeat","path":"spooled/worker/worker.go","status":"fixed","note":"Fixed in 1.5.0"}
+{"id": "GP-1", "sev": "P1", "summary": "Docs/examples pinned worker ids another org can own (ids are global, backend BEJOB-19): 409 on first run", "path": "README.md; examples/{worker,grpc}", "status": "fixed", "note": "Unreleased: omit id or prefix+host+random; WorkerID godoc says ids are global"}
+{"id": "GP-2", "sev": "P2", "summary": "go get of the module root records no deps (missing go.sum entry)", "path": "README.md", "status": "fixed", "note": "Unreleased: go get .../spooled@latest + go mod tidy"}
+{"id": "GP-3", "sev": "P2", "summary": "README env vars SPOOLED_API_KEY/BASE_URL/GRPC_ADDRESS never read", "path": "spooled/config.go", "status": "fixed", "note": "Unreleased: resolveConfig reads them; options win"}
+{"id": "GP-6", "sev": "P3", "summary": "gRPC Job dropped status/result/last_error/timestamps", "path": "spooled/grpc/client.go", "status": "fixed", "note": "Unreleased: pbJobToJob maps every proto field"}
+{"id": "GP-7", "sev": "P3", "summary": "Schedules().Create zero max_retries/timeout/org/created_at", "path": "spooled/resources/schedules.go", "status": "fixed", "note": "Unreleased: POST then GET, fallback to create response"}
+{"id": "GP-8", "sev": "P3", "summary": "Auth examples used Health() which needs no auth", "path": "examples/{api-keys,error-handling}", "status": "fixed", "note": "Unreleased: Queues().List"}
+{"id": "GP-9", "sev": "P3", "summary": "realtime Event.Timestamp always zero (server sends data.timestamp)", "path": "spooled/realtime/types.go", "status": "fixed", "note": "Unreleased: Event.UnmarshalJSON"}
+{"id": "GP-10", "sev": "P3", "summary": "README called undefined ptr()", "path": "README.md", "status": "fixed", "note": "Unreleased: helper defined once"}
+{"id": "GP-11", "sev": "P3", "summary": "Jobs().List returns Job but API sends summaries", "path": "spooled/resources/jobs.go", "status": "documented", "note": "Unreleased: filled fields listed on List/ListPage/DLQ().List"}
+{"id": "GP-12", "sev": "P3", "summary": "No webhook signature verification helper", "path": "spooled/webhook_signature.go", "status": "fixed", "note": "Unreleased: VerifyWebhookSignature + SignWebhookPayload"}
+{"id": "GH-16", "sev": "P3", "summary": "Go Report Card badge retired", "path": "README.md", "status": "fixed", "note": "Unreleased: badge removed"}

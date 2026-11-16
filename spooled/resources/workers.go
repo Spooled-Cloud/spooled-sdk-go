@@ -123,6 +123,8 @@ type RegisterWorkerRequest struct {
 	// crash-looping worker on a tight plan to 429 itself out of registering.
 	// Re-registering an ID this organization already owns is not charged
 	// against the cap; an ID owned by a different organization returns 409.
+	// Worker ids are global across all organizations, so a fixed name such as
+	// "worker-1" or a bare hostname may already be taken: use one unique to you.
 	WorkerID       *string        `json:"worker_id,omitempty"`
 	QueueName      string         `json:"queue_name"`
 	Hostname       string         `json:"hostname"`

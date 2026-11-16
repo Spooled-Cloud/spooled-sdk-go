@@ -15,6 +15,13 @@ func TestCreate_MapsPartialCreateResponseOntoSchedule(t *testing.T) {
 	tz := "America/New_York"
 	priority := 5
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/schedules/sch_1" {
+			// The read-back fails: Create falls back to the create response.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"not_found","message":"Schedule not found"}`))
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/schedules" {
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -67,6 +74,55 @@ func TestCreate_MapsPartialCreateResponseOntoSchedule(t *testing.T) {
 	}
 	if got.NextRunAt == nil {
 		t.Fatal("NextRunAt = nil")
+	}
+}
+
+func TestCreate_ReadsBackStoredSchedule(t *testing.T) {
+	var calls []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/schedules":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"sch_1","name":"Nightly","cron_expression":"0 0 * * *","next_run_at":"2026-01-02T00:00:00Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/schedules/sch_1":
+			_, _ = w.Write([]byte(`{
+				"id":"sch_1","organization_id":"org_1","name":"Nightly",
+				"cron_expression":"0 0 * * *","timezone":"UTC","queue_name":"mail",
+				"payload_template":{"job_type":"digest"},"priority":0,"max_retries":3,
+				"timeout_seconds":300,"is_active":true,"run_count":0,
+				"next_run_at":"2026-01-02T00:00:00Z",
+				"created_at":"2026-01-01T12:00:00Z","updated_at":"2026-01-01T12:00:00Z"
+			}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	res := NewSchedulesResource(httpx.NewTransport(httpx.Config{BaseURL: server.URL, APIKey: "sp_test_key"}))
+	got, err := res.Create(context.Background(), &CreateScheduleRequest{
+		Name:            "Nightly",
+		CronExpression:  "0 0 * * *",
+		QueueName:       "mail",
+		PayloadTemplate: map[string]any{"job_type": "digest"},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("calls = %v, want POST then GET", calls)
+	}
+	if got.MaxRetries != 3 || got.TimeoutSeconds != 300 {
+		t.Errorf("MaxRetries/TimeoutSeconds = %d/%d, want the server defaults 3/300", got.MaxRetries, got.TimeoutSeconds)
+	}
+	if got.OrganizationID != "org_1" {
+		t.Errorf("OrganizationID = %q, want org_1", got.OrganizationID)
+	}
+	if got.CreatedAt.IsZero() || !got.IsActive {
+		t.Errorf("CreatedAt = %v, IsActive = %t; want the stored values", got.CreatedAt, got.IsActive)
 	}
 }
 

@@ -52,3 +52,19 @@ Backend ≥0.1.107 maps 0→QUEUE_DEFAULT_* (default 3/300); still diverges if c
 | SDKGW9-05 | P3 | ~~No SDK surface for 0.1.122 (list filters, X-Has-More, history, worker counters, webhook format/events, inbound log)~~ **FIXED (1.5.0)** | `spooled/resources/{jobs,workers,webhooks,ingest}.go` |
 | SDKGW9-06 | P3 | `FailJobResponse.WillRetry` nil over REST: `POST /jobs/{id}/fail` answers `{"success":true}` only. Documented; gRPC `FailWithResponse` returns it | `spooled/resources/jobs.go` |
 | SDKGW9-07 | P3 | ~~Graceful worker stop logged `Failed to send worker heartbeat: context canceled`~~ **FIXED (1.5.0)** | `spooled/worker/worker.go sendWorkerHeartbeat` |
+
+## Tester round 2026-11-16 (published 1.6.0 against production)
+
+| ID | Sev | Summary | Evidence |
+|----|-----|---------|----------|
+| GP-1 | P1 | ~~README/examples pinned worker ids (`os.Getenv("HOSTNAME")`, `worker-1`, `worker-example-<host>`) that another org can own: 409 "This worker_id cannot be used" (ids are global, backend BEJOB-19)~~ **FIXED (Unreleased)**: docs/examples omit the id or build prefix+host+random; worker already sends none when unset | `README.md`, `examples/{worker,grpc}`, `WorkerID` godoc |
+| GP-2 | P2 | ~~`go get` of the module root records no deps -> `missing go.sum entry`~~ **FIXED (Unreleased)**: README `go get .../spooled@latest` + `go mod tidy` | `README.md` |
+| GP-3 | P2 | ~~README env vars never read; `NewClient()` -> `no authentication configured`~~ **FIXED (Unreleased)**: `resolveConfig` reads `SPOOLED_API_KEY` / `SPOOLED_BASE_URL` / `SPOOLED_GRPC_ADDRESS`, options win | `spooled/config.go`, `config_env_test.go` |
+| GP-6 | P3 | ~~gRPC `Job` dropped status/result/last_error/timestamps/org/worker/idempotency~~ **FIXED (Unreleased)** | `spooled/grpc/client.go pbJobToJob`, `job_fields_test.go` |
+| GP-7 | P3 | ~~`Schedules().Create` zero max_retries/timeout/org/created_at~~ **FIXED (Unreleased)**: POST then GET; GET failure falls back to `scheduleFromCreate` | `spooled/resources/schedules.go` |
+| GP-8 | P3 | ~~`examples/api-keys`, `examples/error-handling` tested auth with `Health()` (no auth)~~ **FIXED (Unreleased)**: `Queues().List` | `examples/` |
+| GP-9 | P3 | ~~realtime `Event.Timestamp` always zero (server sends `data.timestamp`)~~ **FIXED (Unreleased)** | `spooled/realtime/types.go Event.UnmarshalJSON` |
+| GP-10 | P3 | ~~README called undefined `ptr()`~~ **FIXED (Unreleased)**: defined once under Core Concepts | `README.md` |
+| GP-11 | P3 | `Jobs().List` returns `Job` but API sends summaries (Payload nil, UpdatedAt zero). **Documented (Unreleased)** on `List`/`ListPage`/`DLQ().List`; no type change | `spooled/resources/jobs.go` |
+| GP-12 | P3 | ~~No webhook signature helper~~ **ADDED (Unreleased)**: `VerifyWebhookSignature`, `SignWebhookPayload` | `spooled/webhook_signature.go` |
+| GH-16 | P3 | ~~Go Report Card badge renders "retired"~~ **FIXED (Unreleased)**: removed | `README.md` |

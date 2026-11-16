@@ -5,6 +5,69 @@ All notable changes to the Spooled Go SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Fixes from testing the published 1.6.0 against production, plus two additions:
+the client now reads the environment variables the README always documented,
+and webhook receivers get a signature check.
+
+### Fixed
+
+- **Every worker example used a worker id another customer could own.** Worker
+  ids are one namespace across all Spooled organizations, so `worker-1`,
+  `os.Getenv("HOSTNAME")` and similar fixed ids were rejected with `409`
+  ("This worker_id cannot be used") on first run. The README, `examples/worker`
+  and `examples/grpc` now leave the id empty (the server generates one) or show
+  how to build one unique to you, and the `WorkerID` docs say ids are global.
+  The worker itself already sent no id when none was set.
+- **`go get github.com/spooled-cloud/spooled-sdk-go` failed the first build**
+  with `missing go.sum entry`: the module root has no package, so nothing was
+  recorded. The README now says `go get
+  github.com/spooled-cloud/spooled-sdk-go/spooled@latest` followed by
+  `go mod tidy`.
+- **`SPOOLED_API_KEY`, `SPOOLED_BASE_URL` and `SPOOLED_GRPC_ADDRESS` were
+  documented but never read**, so `spooled.NewClient()` failed with
+  `no authentication configured`. `NewClient` now reads them (see Added).
+- **gRPC `Job` dropped most of the proto job.** `GetJob`, `Dequeue` and
+  `StreamJobs` jobs now carry `Status` (as a `resources.JobStatus`, empty for
+  `JOB_STATUS_UNSPECIFIED`), `Result`, `LastError`, `OrganizationID`,
+  `CreatedAt`, `ScheduledAt`, `StartedAt`, `CompletedAt`, `AssignedWorkerID` and
+  `IdempotencyKey`.
+- **`Schedules().Create` returned zero `MaxRetries`, `TimeoutSeconds`,
+  `OrganizationID` and `CreatedAt`** when the request left them to the server,
+  because `POST /schedules` answers with the id, name, cron expression and next
+  run only. `Create` now reads the schedule back with one `GET` and returns the
+  stored values. If that read fails it still returns the schedule built from
+  the create response and the request (the schedule exists, so it is not an
+  error).
+- **Realtime `Event.Timestamp` was always zero.** The server puts `timestamp`
+  inside `data`; it is now read from there when the event has no top-level
+  timestamp.
+- **`examples/api-keys` and `examples/error-handling` tested a key with
+  `Health()`**, which needs no authentication, so a revoked or invalid key
+  looked valid. They now call `Queues().List`.
+- README snippets called a `ptr()` helper that was never defined; the README
+  now defines it once. The retired Go Report Card badge is removed.
+- `Jobs().List`, `ListPage` and `DLQ().List` document that the API returns job
+  summaries: `Payload`, `Result`, `Tags`, `UpdatedAt` and the lease, worker and
+  workflow fields are not filled; use `Jobs().Get` for the full job.
+
+### Added
+
+- `spooled.NewClient` reads `SPOOLED_API_KEY` when neither `WithAPIKey` nor
+  `WithAccessToken` is given, `SPOOLED_BASE_URL` when `WithBaseURL` is not
+  given, and `SPOOLED_GRPC_ADDRESS` when `WithGRPCAddress` is not given. An
+  option always wins. Constants `spooled.EnvAPIKey`, `EnvBaseURL` and
+  `EnvGRPCAddress` name them. A program that sets one of these variables for
+  another purpose and builds a client without the matching option now picks it
+  up.
+- `spooled.VerifyWebhookSignature(secret, timestampHeader, signatureHeader,
+  body, tolerance)` checks `X-Spooled-Signature` (`sha256=` + hex HMAC-SHA256 of
+  `"{timestamp}.{body}"`) and the `X-Spooled-Timestamp` age, comparing in
+  constant time. `spooled.SignWebhookPayload` computes the header for tests;
+  `WebhookSignatureHeader`, `WebhookTimestampHeader`, `DefaultWebhookTolerance`
+  and the `ErrWebhook*` errors come with them.
+
 ## [1.6.0] - 2026-10-15
 
 Signed completion webhooks, the workflow job fields the API already returns, and

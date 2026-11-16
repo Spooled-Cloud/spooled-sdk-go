@@ -75,9 +75,27 @@ func main() {
 		fmt.Printf("  Processing: %d\n", stats.Processing)
 	}
 
+	// Register a worker. Worker ids are one namespace shared by every Spooled
+	// customer, so a fixed id such as "worker-1" can already belong to someone
+	// else (AlreadyExists: "This worker_id cannot be used"). Leaving WorkerID
+	// empty lets the server generate a unique one.
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "grpc-example"
+	}
+	reg, err := client.RegisterWorker(ctx, &spooledgrpc.RegisterWorkerRequest{
+		QueueName:      queueName,
+		Hostname:       hostname,
+		MaxConcurrency: 3,
+	})
+	if err != nil {
+		log.Fatalf("Failed to register worker: %v", err)
+	}
+	workerID := reg.WorkerID
+	fmt.Printf("\n✓ Registered worker: %s\n", workerID)
+
 	// Dequeue jobs
 	fmt.Println("\nDequeuing jobs...")
-	workerID := fmt.Sprintf("worker-%d", time.Now().Unix())
 	failures := 0
 	resp, err := client.Dequeue(ctx, &spooledgrpc.DequeueRequest{
 		QueueName: queueName,
@@ -128,6 +146,10 @@ func main() {
 				fmt.Printf("    ✓ Failed without retry (will retry: %t)\n", failed.WillRetry)
 			}
 		}
+	}
+
+	if err := client.DeregisterWorker(ctx, workerID); err != nil {
+		log.Printf("Failed to deregister worker: %v", err)
 	}
 
 	if failures > 0 {

@@ -230,20 +230,37 @@ type DequeueRequest struct {
 	LeaseDurationSec int32
 }
 
-// Job represents a dequeued job.
+// Job represents a job returned by Dequeue, StreamJobs or GetJob.
 //
-// Payload comes from a google.protobuf.Struct: a job created over REST with a
-// non-object payload (array, string, number) arrives empty here, and integers
-// of 2^53 or more arrive rounded. Read such jobs over REST.
+// Payload and Result come from a google.protobuf.Struct: a job created over
+// REST with a non-object payload or result (array, string, number) arrives
+// empty here, and integers of 2^53 or more arrive rounded. Read such jobs over
+// REST.
 type Job struct {
 	ID             string
+	OrganizationID string
 	QueueName      string
-	Payload        map[string]any
-	Priority       int32
-	RetryCount     int32
-	MaxRetries     int32
+	// Status is the job's status in the REST API's spelling ("pending",
+	// "processing", "completed", ...). It is empty when the server sends
+	// JOB_STATUS_UNSPECIFIED.
+	Status  resources.JobStatus
+	Payload map[string]any
+	// Result is the job's result once it completed (nil before that).
+	Result     map[string]any
+	Priority   int32
+	RetryCount int32
+	MaxRetries int32
+	// LastError is the error text of the job's latest failure ("" if none).
+	LastError      string
 	TimeoutSeconds int32
+	CreatedAt      *time.Time
+	ScheduledAt    *time.Time
+	StartedAt      *time.Time
+	CompletedAt    *time.Time
 	LeaseExpiresAt *time.Time
+	// AssignedWorkerID is the worker holding the job ("" if none).
+	AssignedWorkerID string
+	IdempotencyKey   string
 	// LeaseID is the lease fencing token issued by the server for this
 	// dequeue. Echo it back on Complete, Fail and RenewLease: the server
 	// requires it there (a settlement without it fails with InvalidArgument
@@ -576,7 +593,9 @@ type RegisterWorkerRequest struct {
 	// [A-Za-z0-9._-]. Send the same id after a restart and the server updates
 	// that worker instead of adding one, so a restarting worker does not count
 	// twice against the plan's worker limit. Empty: the server assigns a new
-	// id. An id another organization already uses fails with AlreadyExists.
+	// id. An id another organization already uses fails with AlreadyExists:
+	// worker ids are global across all organizations, so a fixed name such as
+	// "worker-1" or a bare hostname may already be taken.
 	WorkerID string
 }
 
@@ -675,23 +694,52 @@ func pbJobToJob(j *pb.Job) *Job {
 	}
 
 	job := &Job{
-		ID:             j.Id,
-		QueueName:      j.QueueName,
-		Priority:       j.Priority,
-		RetryCount:     j.RetryCount,
-		MaxRetries:     j.MaxRetries,
-		TimeoutSeconds: j.TimeoutSeconds,
-		LeaseID:        j.LeaseId,
+		ID:               j.Id,
+		OrganizationID:   j.OrganizationId,
+		QueueName:        j.QueueName,
+		Status:           jobStatusFromProto(j.Status),
+		Priority:         j.Priority,
+		RetryCount:       j.RetryCount,
+		MaxRetries:       j.MaxRetries,
+		LastError:        j.LastError,
+		TimeoutSeconds:   j.TimeoutSeconds,
+		CreatedAt:        timeFromProto(j.CreatedAt),
+		ScheduledAt:      timeFromProto(j.ScheduledAt),
+		StartedAt:        timeFromProto(j.StartedAt),
+		CompletedAt:      timeFromProto(j.CompletedAt),
+		LeaseExpiresAt:   timeFromProto(j.LeaseExpiresAt),
+		AssignedWorkerID: j.AssignedWorkerId,
+		IdempotencyKey:   j.IdempotencyKey,
+		LeaseID:          j.LeaseId,
 	}
 
 	if j.Payload != nil {
 		job.Payload = j.Payload.AsMap()
 	}
-
-	if j.LeaseExpiresAt != nil {
-		t := j.LeaseExpiresAt.AsTime()
-		job.LeaseExpiresAt = &t
+	if j.Result != nil {
+		job.Result = j.Result.AsMap()
 	}
 
 	return job
+}
+
+// jobStatusFromProto maps the proto enum onto the REST status names
+// (JOB_STATUS_PENDING -> "pending"). Unspecified or unknown values are "".
+func jobStatusFromProto(s pb.JobStatus) resources.JobStatus {
+	if s == pb.JobStatus_JOB_STATUS_UNSPECIFIED {
+		return ""
+	}
+	name, ok := pb.JobStatus_name[int32(s)]
+	if !ok {
+		return ""
+	}
+	return resources.JobStatus(strings.ToLower(strings.TrimPrefix(name, "JOB_STATUS_")))
+}
+
+func timeFromProto(ts *timestamppb.Timestamp) *time.Time {
+	if ts == nil {
+		return nil
+	}
+	t := ts.AsTime()
+	return &t
 }

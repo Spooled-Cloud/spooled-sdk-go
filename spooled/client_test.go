@@ -37,6 +37,7 @@ func TestNewClient_WithAccessToken(t *testing.T) {
 }
 
 func TestNewClient_NoAuth(t *testing.T) {
+	t.Setenv(EnvAPIKey, "")
 	_, err := NewClient()
 	if err == nil {
 		t.Error("Expected error when no authentication provided")

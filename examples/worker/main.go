@@ -60,17 +60,15 @@ func main() {
 	}
 	fmt.Printf("✓ Created 5 test jobs in queue: %s\n\n", queueName)
 
-	// Pin a stable worker identity so restarts reuse one worker row instead of
-	// leaving the old one against the plan worker cap for a couple of minutes.
-	// In production this is usually the pod, machine or container name.
+	// Worker ids are one namespace shared by every Spooled customer, so a fixed
+	// id ("worker-1") or a bare hostname can already belong to someone else and
+	// is rejected with 409 "This worker_id cannot be used". With WORKER_ID unset
+	// the id stays empty and the server generates a unique one. To keep one id
+	// across restarts (so a restart reuses its worker row instead of leaving the
+	// old one against the plan's worker cap for a couple of minutes), set
+	// WORKER_ID to an id only you use, such as "<app>-<hostname>-<random suffix>"
+	// generated once and kept in your deployment config.
 	workerID := os.Getenv("WORKER_ID")
-	if workerID == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			log.Fatalf("Failed to resolve hostname: %v", err)
-		}
-		workerID = fmt.Sprintf("worker-example-%s", hostname)
-	}
 
 	// Create worker
 	w := worker.NewWorker(client.Jobs(), client.Workers(), worker.Options{

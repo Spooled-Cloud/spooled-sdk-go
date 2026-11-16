@@ -191,6 +191,11 @@ type Client struct {
 }
 
 // NewClient creates a new Spooled client with the given options.
+//
+// Settings not given as options are read from the environment:
+// SPOOLED_API_KEY when neither WithAPIKey nor WithAccessToken is given,
+// SPOOLED_BASE_URL when WithBaseURL is not given, and SPOOLED_GRPC_ADDRESS when
+// WithGRPCAddress is not given. An option always wins over the environment.
 func NewClient(opts ...Option) (*Client, error) {
 	cfg := resolveConfig(opts...)
 

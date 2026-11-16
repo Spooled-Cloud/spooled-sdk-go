@@ -250,6 +250,13 @@ type JobsPage struct {
 }
 
 // List retrieves a list of jobs. ListPage also reports whether more follow.
+//
+// GET /jobs returns job summaries, not full jobs. Only these Job fields are
+// filled: ID, QueueName, Status, Priority, RetryCount (the summary's
+// attempt), MaxRetries, JobType (payload.job_type), LastError, CreatedAt,
+// ScheduledAt, StartedAt and CompletedAt. Payload, Result, Tags,
+// OrganizationID, TimeoutSeconds, the lease, worker and workflow fields stay
+// nil or zero, and UpdatedAt is the zero time. Call Get for the full job.
 func (r *JobsResource) List(ctx context.Context, params *ListJobsParams) ([]Job, error) {
 	page, err := r.ListPage(ctx, params)
 	if err != nil {
@@ -259,6 +266,7 @@ func (r *JobsResource) List(ctx context.Context, params *ListJobsParams) ([]Job,
 }
 
 // ListPage retrieves one page of jobs together with the X-Has-More hint.
+// Its jobs are summaries with the same fields filled as List's.
 func (r *JobsResource) ListPage(ctx context.Context, params *ListJobsParams) (*JobsPage, error) {
 	var page JobsPage
 	hasMore, err := r.base.getPage(ctx, "/api/v1/jobs", params.query(), &page.Jobs)
@@ -692,7 +700,8 @@ type ListDLQParams struct {
 }
 
 // List retrieves dead letter queue jobs. ListPage also reports whether more
-// follow.
+// follow. The jobs are summaries with the same fields filled as
+// JobsResource.List's; call Jobs().Get for a job's payload.
 func (r *DLQResource) List(ctx context.Context, params *ListDLQParams) ([]Job, error) {
 	page, err := r.ListPage(ctx, params)
 	if err != nil {

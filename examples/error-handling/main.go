@@ -72,7 +72,8 @@ func main() {
 		spooled.WithBaseURL(baseURL),
 	)
 	defer badClient.Close()
-	_, err = badClient.Health().Get(ctx)
+	// Use an authenticated endpoint: Health() needs no key and would succeed.
+	_, err = badClient.Queues().List(ctx)
 	if err != nil {
 		handleError("Request with invalid API key", err)
 	}

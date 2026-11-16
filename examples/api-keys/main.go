@@ -105,11 +105,13 @@ func main() {
 	if err != nil {
 		log.Printf("Failed to create test client: %v", err)
 	} else {
-		health, err := testClient.Health().Get(ctx)
+		// An authenticated call: Health() needs no key, so it would succeed
+		// with any key, valid or not.
+		queues, err := testClient.Queues().List(ctx)
 		if err != nil {
 			log.Printf("New API key test failed: %v", err)
 		} else {
-			fmt.Printf("✓ New API key works! Health: %s\n", health.Status)
+			fmt.Printf("✓ New API key works! It can see %d queue(s)\n", len(queues))
 		}
 	}
 
@@ -123,7 +125,7 @@ func main() {
 
 	// Verify the deleted key no longer works
 	fmt.Println("\nVerifying deleted key...")
-	_, err = testClient.Health().Get(ctx)
+	_, err = testClient.Queues().List(ctx)
 	if err != nil {
 		fmt.Printf("✓ Deleted key correctly rejected: %v\n", err)
 	} else {

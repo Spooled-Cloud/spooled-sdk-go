@@ -5,7 +5,6 @@ Official Go SDK for [Spooled Cloud](https://spooled.cloud) — a modern, scalabl
 [**Live Demo (SpriteForge)**](https://example.spooled.cloud) • [Documentation](https://spooled.cloud/docs)
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/spooled-cloud/spooled-sdk-go.svg)](https://pkg.go.dev/github.com/spooled-cloud/spooled-sdk-go)
-[![Go Report Card](https://goreportcard.com/badge/github.com/spooled-cloud/spooled-sdk-go)](https://goreportcard.com/report/github.com/spooled-cloud/spooled-sdk-go)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 ## Features
@@ -25,8 +24,14 @@ Official Go SDK for [Spooled Cloud](https://spooled.cloud) — a modern, scalabl
 ## Installation
 
 ```bash
-go get github.com/spooled-cloud/spooled-sdk-go
+go get github.com/spooled-cloud/spooled-sdk-go/spooled@latest
+go mod tidy
 ```
+
+Get the `spooled` package, not the module root: the root has no Go package, so
+`go get github.com/spooled-cloud/spooled-sdk-go` records no dependencies and the
+first build fails with `missing go.sum entry`. `go mod tidy` adds the go.sum
+entries for the other packages you import (`spooled/worker`, `spooled/grpc`...).
 
 **Requirements:** Go 1.26 or later
 
@@ -238,13 +243,31 @@ client, err := spooled.NewClient(
 
 ### Environment Variables
 
+`spooled.NewClient` reads these when the matching option is not given; an
+option always wins:
+
 ```bash
-SPOOLED_API_KEY=sp_live_...
-SPOOLED_BASE_URL=https://api.spooled.cloud
-SPOOLED_GRPC_ADDRESS=grpc.spooled.cloud:443
+SPOOLED_API_KEY=sp_live_...                # used when neither WithAPIKey nor WithAccessToken is set
+SPOOLED_BASE_URL=https://api.spooled.cloud # used when WithBaseURL is not set
+SPOOLED_GRPC_ADDRESS=grpc.spooled.cloud:443 # used when WithGRPCAddress is not set (client.GRPC())
 ```
 
+```go
+client, err := spooled.NewClient() // everything from the environment
+```
+
+`spooledgrpc.NewClient` (the standalone gRPC client) does not read the
+environment; pass `Address` and `APIKey` to it.
+
 ## Core Concepts
+
+Optional request fields are pointers. The snippets below use this one-line
+generic helper (the SDK does not export one; `types.String`, `types.Int` and
+`types.Bool` in `spooled/types` cover the basic types):
+
+```go
+func ptr[T any](v T) *T { return &v }
+```
 
 ### Jobs
 
@@ -341,7 +364,7 @@ Process jobs with the built-in worker runtime:
 ```go
 w := worker.NewWorker(client.Jobs(), client.Workers(), worker.Options{
     QueueName:         "my-queue",
-    WorkerID:          os.Getenv("HOSTNAME"), // Stable identity, see below
+    // WorkerID: optional; leave it empty for a server-generated id (see below)
     Concurrency:       10,              // Max concurrent jobs
     PollInterval:      time.Second,     // Polling frequency
     LeaseDuration:     30,              // Lease duration in seconds
@@ -420,15 +443,31 @@ How the worker behaves:
 `JobsProcessed` (jobs it completed) and `JobsFailed` (failures it reported;
 jobs released because a lease expired are not counted).
 
-`WorkerID` is optional but worth setting. It must be 1-128 characters from
-`[A-Za-z0-9._-]`, and keeping it the same across restarts makes registration an
-upsert, so the process reclaims one worker row. Leave it empty and the server
-mints a fresh UUID on every `Start`, which leaves the previous row occupying
-your plan's worker cap until the stale-worker reaper clears it (roughly two
-minutes) - long enough for a crash-looping worker on a tight plan to hit
-`429 QUOTA_EXCEEDED` on its own registrations. Re-registering an ID your
-organization already owns costs nothing against the cap; an ID owned by another
-organization is rejected with `409`.
+`WorkerID` is optional. **Worker ids are one namespace shared by every Spooled
+customer, so an id must be unique to you:** a fixed name such as `worker-1` or a
+bare hostname (`os.Getenv("HOSTNAME")`, `worker-0` in a StatefulSet) may already
+belong to another organization, and registration then fails with `409`
+(`*spooled.ConflictError`, "This worker_id cannot be used"). Leave it empty and
+the server generates a unique id on every `Start`.
+
+A pinned id must be 1-128 characters from `[A-Za-z0-9._-]`, and keeping it the
+same across restarts makes registration an upsert, so the process reclaims one
+worker row. Without one, each restart leaves the previous row occupying your
+plan's worker cap until the stale-worker reaper clears it (roughly two minutes)
+- long enough for a crash-looping worker on a tight plan to hit
+`429 QUOTA_EXCEEDED` on its own registrations. To pin one, build it from a
+prefix, the hostname and a random suffix, generate it once, and keep it in your
+deployment config (an environment variable such as `WORKER_ID`):
+
+```go
+suffix := make([]byte, 6)
+_, _ = rand.Read(suffix) // crypto/rand
+host, _ := os.Hostname()
+workerID := fmt.Sprintf("myapp-%s-%x", host, suffix) // e.g. myapp-web-1-3f9a0c12b7e4
+```
+
+Re-registering an id your organization already owns costs nothing against the
+cap.
 
 ### Workflows (DAGs)
 
@@ -611,10 +650,19 @@ resp, err := client.Enqueue(ctx, &spooledgrpc.EnqueueRequest{
 })
 fmt.Printf("Job ID: %s\n", resp.JobID)
 
+// Register a worker. Leave WorkerID empty: worker ids are global across all
+// Spooled customers, so a fixed one such as "worker-1" may already be taken.
+host, _ := os.Hostname()
+reg, err := client.RegisterWorker(ctx, &spooledgrpc.RegisterWorkerRequest{
+    QueueName: "high-throughput",
+    Hostname:  host,
+})
+workerID := reg.WorkerID
+
 // Dequeue jobs
 jobs, err := client.Dequeue(ctx, &spooledgrpc.DequeueRequest{
     QueueName: "high-throughput",
-    WorkerID:  "worker-1",
+    WorkerID:  workerID,
     BatchSize: 10,
     LeaseDurationSec: 300, // 5-3600; 0 = the server default (300 s on Spooled Cloud)
 })
@@ -623,19 +671,19 @@ jobs, err := client.Dequeue(ctx, &spooledgrpc.DequeueRequest{
 for _, job := range jobs.Jobs {
     // Process job...
     err = client.Complete(ctx, &spooledgrpc.CompleteRequest{
-        JobID: job.ID, WorkerID: "worker-1", LeaseID: job.LeaseID,
+        JobID: job.ID, WorkerID: workerID, LeaseID: job.LeaseID,
     })
 }
 
 // Or fail a job without a retry: it goes to the dead-letter queue now.
 // failed.WillRetry reports what the server decided.
 failed, err := client.FailWithResponse(ctx, &spooledgrpc.FailRequest{
-    JobID: jobs.Jobs[0].ID, WorkerID: "worker-1", LeaseID: jobs.Jobs[0].LeaseID,
+    JobID: jobs.Jobs[0].ID, WorkerID: workerID, LeaseID: jobs.Jobs[0].LeaseID,
     Error: "invalid input", NoRetry: true,
 })
 
 // Stream jobs (server-side streaming)
-stream, err := client.StreamJobs(ctx, "high-throughput", "worker-1")
+stream, err := client.StreamJobs(ctx, "high-throughput", workerID)
 for {
     job, err := stream.Recv()
     if err == io.EOF {
@@ -742,6 +790,37 @@ _, err = client.Webhooks().Update(ctx, webhook.ID, &resources.UpdateOutgoingWebh
     ClearSecret: true,
 })
 ```
+
+**Verifying a delivery.** A webhook with a secret (and a job's completion
+callback with `CompletionWebhookSecret`) is sent with `X-Spooled-Timestamp`
+(Unix seconds) and `X-Spooled-Signature: sha256=<hex HMAC-SHA256 of
+"{timestamp}.{body}">`. `spooled.VerifyWebhookSignature` checks both, compares
+in constant time, and rejects a timestamp further than the tolerance from now:
+
+```go
+http.HandleFunc("/webhooks/spooled", func(w http.ResponseWriter, r *http.Request) {
+    body, err := io.ReadAll(r.Body) // the raw body, before any JSON decoding
+    if err != nil {
+        http.Error(w, "bad request", http.StatusBadRequest)
+        return
+    }
+    if err := spooled.VerifyWebhookSignature(
+        os.Getenv("SPOOLED_WEBHOOK_SECRET"),
+        r.Header.Get(spooled.WebhookTimestampHeader),
+        r.Header.Get(spooled.WebhookSignatureHeader),
+        body,
+        5*time.Minute,
+    ); err != nil {
+        http.Error(w, "invalid signature", http.StatusUnauthorized)
+        return
+    }
+    // ... decode body and handle the event ...
+    w.WriteHeader(http.StatusNoContent)
+})
+```
+
+`spooled.SignWebhookPayload(secret, timestamp, body)` returns the header value
+Spooled would send, for tests of your handler.
 
 `Deliveries` is not a durable audit log: only the newest 100 deliveries per
 webhook are readable, and rows are removed once they pass your plan's history

@@ -10,3 +10,6 @@
 | Workflow job routes | `contracts/parity.md` |
 | gRPC proto | `scripts/generate_grpc.sh` (copies `spooled-backend/proto/spooled.proto` and applies the SDK override for `FailRequest.retry`), `sdkProtoOverrides` + `TestProto_*` in `spooled/grpc/proto_contract_test.go`, changelog notes (proto commit, sha256, generator versions) |
 | List filters / paging / history / webhook formats | `spooled/resources/{jobs,webhooks,ingest}.go`, `api_0122_test.go`, `contracts/parity.md` |
+| Client env vars (`SPOOLED_*`) | `spooled/config.go resolveConfig`, `config_env_test.go`, README "Environment Variables" |
+| Webhook signature scheme | `spooled/webhook_signature.go` (must match backend `outgoing_webhooks/service.rs sign_payload`), README "Webhooks" |
+| Worker id examples | ids are global across orgs: README, `examples/{worker,grpc}` never pin a fixed id |

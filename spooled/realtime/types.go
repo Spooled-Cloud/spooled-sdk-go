@@ -86,9 +86,30 @@ func normalizeEventType(raw EventType) EventType {
 
 // Event represents a realtime event from the Spooled API.
 type Event struct {
-	Type      EventType       `json:"type"`
+	Type EventType `json:"type"`
+	// Timestamp is when the server emitted the event. The server sends it
+	// inside data ({"type": ..., "data": {..., "timestamp": ...}}); it is read
+	// from there when the event has no top-level timestamp.
 	Timestamp time.Time       `json:"timestamp"`
 	Data      json.RawMessage `json:"data"`
+}
+
+// UnmarshalJSON decodes an event and fills Timestamp from data.timestamp when
+// the top-level field is absent.
+func (e *Event) UnmarshalJSON(data []byte) error {
+	type eventAlias Event
+	if err := json.Unmarshal(data, (*eventAlias)(e)); err != nil {
+		return err
+	}
+	if e.Timestamp.IsZero() && len(e.Data) > 0 {
+		var inner struct {
+			Timestamp *time.Time `json:"timestamp"`
+		}
+		if json.Unmarshal(e.Data, &inner) == nil && inner.Timestamp != nil {
+			e.Timestamp = *inner.Timestamp
+		}
+	}
+	return nil
 }
 
 // JobEvent contains data for job-related events.

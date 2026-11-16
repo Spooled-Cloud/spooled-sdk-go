@@ -125,10 +125,24 @@ type createScheduleResponse struct {
 }
 
 // Create creates a new schedule.
+//
+// POST /schedules answers with the id, name, cron expression and next run
+// only, so Create reads the new schedule back with one GET and returns the
+// stored values (server defaults for max_retries and timeout_seconds,
+// organization_id, created_at...). If that read fails the schedule still
+// exists, so Create does not report an error: it returns the create response
+// with the request's fields filled in, and OrganizationID, CreatedAt and
+// UpdatedAt stay zero (as do MaxRetries and TimeoutSeconds when the request
+// left them unset).
 func (r *SchedulesResource) Create(ctx context.Context, req *CreateScheduleRequest) (*Schedule, error) {
 	var created createScheduleResponse
 	if err := r.base.Post(ctx, "/api/v1/schedules", req, &created); err != nil {
 		return nil, err
+	}
+	if created.ID != "" {
+		if stored, err := r.Get(ctx, created.ID); err == nil && stored.ID != "" {
+			return stored, nil
+		}
 	}
 	return scheduleFromCreate(created, req), nil
 }

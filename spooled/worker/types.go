@@ -30,6 +30,9 @@ type Options struct {
 	// identity. Leave it empty and the server mints a fresh UUID on every
 	// Start, which leaves the previous row occupying the plan worker cap
 	// until the stale-worker reaper clears it (roughly two minutes).
+	// Worker ids are global across all Spooled organizations, so pick one
+	// nobody else can: a fixed name such as "worker-1" or a bare hostname may
+	// already be taken, and registration then fails with 409.
 	WorkerID string
 	// Hostname is the worker hostname (default: auto-detected)
 	Hostname string
