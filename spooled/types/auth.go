@@ -101,7 +101,8 @@ type StartEmailLoginResponse struct {
 	EmailSentTo string `json:"email_sent_to"`
 }
 
-// CheckEmailResponse is GET /auth/check-email.
+// CheckEmailResponse is GET /auth/check-email. Since backend 0.1.130, Exists is
+// always false and Available always true unless the request carries the admin key.
 type CheckEmailResponse struct {
 	Available     bool `json:"available"`
 	Exists        bool `json:"exists"`

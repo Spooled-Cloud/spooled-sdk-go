@@ -189,14 +189,18 @@ func (r *AuthResource) StartEmailLogin(ctx context.Context, req *StartEmailLogin
 	return &result, nil
 }
 
-// CheckEmailResponse is GET /auth/check-email.
+// CheckEmailResponse is GET /auth/check-email. Since backend 0.1.130, Exists is
+// always false and Available always true unless the request carries the admin key.
 type CheckEmailResponse struct {
 	Available     bool `json:"available"`
 	Exists        bool `json:"exists"`
 	SignupEnabled bool `json:"signup_enabled"`
 }
 
-// CheckEmail checks whether an email is registered (GET /auth/check-email).
+// CheckEmail checks whether email signup is open (GET /auth/check-email).
+// Since backend 0.1.130, Exists and Available describe the address only for a
+// request with the operator's admin key. Whether an address has an account is
+// learned from VerifyEmail (type "login" or "signup"), after the emailed code.
 func (r *AuthResource) CheckEmail(ctx context.Context, email string) (*CheckEmailResponse, error) {
 	var result CheckEmailResponse
 	query := url.Values{}
