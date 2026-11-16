@@ -244,7 +244,8 @@ client, err := spooled.NewClient(
 ### Environment Variables
 
 `spooled.NewClient` reads these when the matching option is not given; an
-option always wins:
+option wins, but an empty `WithAPIKey("")` or `WithAccessToken("")` counts as
+unset, so `SPOOLED_API_KEY` still applies:
 
 ```bash
 SPOOLED_API_KEY=sp_live_...                # used when neither WithAPIKey nor WithAccessToken is set

@@ -301,9 +301,11 @@ func newDefaultConfig() *Config {
 }
 
 // resolveConfig applies the environment, then options, and resolves derived
-// values. Options always win over the environment: SPOOLED_BASE_URL and
+// values. Options win over the environment: SPOOLED_BASE_URL and
 // SPOOLED_GRPC_ADDRESS are applied before the options, and SPOOLED_API_KEY is
-// used only when no option supplied an API key or an access token.
+// used only when no option supplied an API key or an access token. An empty
+// WithAPIKey or WithAccessToken (after trimming) counts as unset, so
+// WithAPIKey("") still falls back to SPOOLED_API_KEY.
 func resolveConfig(opts ...Option) *Config {
 	cfg := newDefaultConfig()
 	if baseURL := strings.TrimSpace(os.Getenv(EnvBaseURL)); baseURL != "" {

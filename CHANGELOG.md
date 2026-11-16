@@ -65,7 +65,8 @@ and webhook receivers get a signature check.
 - `spooled.NewClient` reads `SPOOLED_API_KEY` when neither `WithAPIKey` nor
   `WithAccessToken` is given, `SPOOLED_BASE_URL` when `WithBaseURL` is not
   given, and `SPOOLED_GRPC_ADDRESS` when `WithGRPCAddress` is not given. An
-  option always wins. Constants `spooled.EnvAPIKey`, `EnvBaseURL` and
+  option wins; an empty `WithAPIKey` or `WithAccessToken` counts as unset, so
+  `SPOOLED_API_KEY` still applies. Constants `spooled.EnvAPIKey`, `EnvBaseURL` and
   `EnvGRPCAddress` name them. A program that sets one of these variables for
   another purpose and builds a client without the matching option now picks it
   up.

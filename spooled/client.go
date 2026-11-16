@@ -195,7 +195,9 @@ type Client struct {
 // Settings not given as options are read from the environment:
 // SPOOLED_API_KEY when neither WithAPIKey nor WithAccessToken is given,
 // SPOOLED_BASE_URL when WithBaseURL is not given, and SPOOLED_GRPC_ADDRESS when
-// WithGRPCAddress is not given. An option always wins over the environment.
+// WithGRPCAddress is not given. An option wins over the environment, but an
+// empty WithAPIKey or WithAccessToken (after trimming) counts as unset, so
+// SPOOLED_API_KEY still applies.
 func NewClient(opts ...Option) (*Client, error) {
 	cfg := resolveConfig(opts...)
 
